@@ -1,5 +1,9 @@
 jest.mock('next/cache', () => ({ revalidatePath: jest.fn() }));
-jest.mock('next/navigation', () => ({ redirect: jest.fn((url: string) => { throw new Error(`redirect:${url}`); }) }));
+jest.mock('next/navigation', () => ({
+  redirect: jest.fn((url: string) => {
+    throw new Error(`redirect:${url}`);
+  }),
+}));
 jest.mock('drizzle-orm', () => ({
   and: jest.fn((...values) => values),
   eq: jest.fn((...values) => values),
@@ -19,7 +23,12 @@ jest.mock('@/shared/db/cloudflare', () => ({
 }));
 jest.mock('@/shared/db/schema', () => ({
   mailDomains: { id: 'domains.id', tenantId: 'domains.tenantId' },
-  mailMailboxes: { id: 'mailboxes.id', tenantId: 'mailboxes.tenantId', status: 'mailboxes.status', domainId: 'mailboxes.domainId' },
+  mailMailboxes: {
+    id: 'mailboxes.id',
+    tenantId: 'mailboxes.tenantId',
+    status: 'mailboxes.status',
+    domainId: 'mailboxes.domainId',
+  },
   mailMigrationRuns: {
     id: 'runs.id',
     tenantId: 'runs.tenantId',
@@ -33,6 +42,7 @@ jest.mock('@/shared/db/schema', () => ({
   },
 }));
 jest.mock('./cloudflare', () => ({ pushMailMigrationQueue: jest.fn() }));
+jest.mock('./content', () => ({ deleteMailContent: jest.fn().mockResolvedValue(undefined) }));
 jest.mock('./migration-credentials', () => ({
   encryptImapCredential: jest.fn(async () => 'encrypted-source-credential'),
   normalizeImapEndpoint: jest.fn((host: string, port: number) => {
@@ -49,7 +59,8 @@ import { db } from '@/shared/db/cloudflare';
 import { mailDomains, mailMailboxes, mailMigrationRuns } from '@/shared/db/schema';
 
 import { pushMailMigrationQueue } from './cloudflare';
-import { startImapMailMigration } from './mail-migration-actions';
+import { deleteMailContent } from './content';
+import { cancelMailMigration, startImapMailMigration } from './mail-migration-actions';
 import { encryptImapCredential, normalizeImapEndpoint } from './migration-credentials';
 import { getMailWorkspace, requireMailWorkspaceAccess } from './workspace';
 
@@ -60,6 +71,7 @@ const mockedDb = db as unknown as {
     mailMigrationRuns: { findFirst: jest.Mock };
   };
   insert: jest.Mock;
+  update: jest.Mock;
 };
 
 function makeForm(overrides: Record<string, string> = {}) {
@@ -72,7 +84,8 @@ function makeForm(overrides: Record<string, string> = {}) {
     username: 'hello@mkety.com',
     password: 'source-app-password',
     ...overrides,
-  })) form.set(key, value);
+  }))
+    form.set(key, value);
   return form;
 }
 
@@ -92,8 +105,15 @@ describe('IMAP Mail migration actions', () => {
       localPart: 'hello',
       status: 'active',
     });
-    mockedDb.query.mailDomains.findFirst.mockResolvedValue({ id: 'domain-1', tenantId: 'tenant-1', domain: 'mkety.com' });
+    mockedDb.query.mailDomains.findFirst.mockResolvedValue({
+      id: 'domain-1',
+      tenantId: 'tenant-1',
+      domain: 'mkety.com',
+    });
     mockedDb.query.mailMigrationRuns.findFirst.mockResolvedValue(null);
+    mockedDb.update.mockReturnValue({
+      set: jest.fn(() => ({ where: jest.fn().mockResolvedValue([]) })),
+    });
     mockedDb.insert.mockReturnValue({
       values: jest.fn(() => ({
         returning: jest.fn(async () => [{ id: '00000000-0000-4000-8000-000000000001' }]),
@@ -103,10 +123,14 @@ describe('IMAP Mail migration actions', () => {
 
   it('scopes the destination mailbox to the current tenant before creating a run', async () => {
     mockedDb.query.mailMailboxes.findFirst.mockResolvedValue(null);
-    await expect(startImapMailMigration('mkety-ops', makeForm())).rejects.toThrow('redirect:/app/mkety-ops/mail/migration?error=mailbox');
-    expect(mockedDb.query.mailMailboxes.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.anything(),
-    }));
+    await expect(startImapMailMigration('mkety-ops', makeForm())).rejects.toThrow(
+      'redirect:/app/mkety-ops/mail/migration?error=mailbox',
+    );
+    expect(mockedDb.query.mailMailboxes.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.anything(),
+      }),
+    );
     expect(mockedDb.insert).not.toHaveBeenCalled();
   });
 
@@ -117,18 +141,34 @@ describe('IMAP Mail migration actions', () => {
     expect(normalizeImapEndpoint).toHaveBeenCalledWith('imap.zoho.com', 993);
     expect(encryptImapCredential).toHaveBeenCalledWith('hello@mkety.com', 'source-app-password');
     expect(mockedDb.insert).toHaveBeenCalledWith(mailMigrationRuns);
-    expect(mockedDb.query.mailDomains.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.anything() }));
+    expect(mockedDb.query.mailDomains.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.anything() }),
+    );
     const insertValues = mockedDb.insert.mock.results[0]?.value.values.mock.calls[0]?.[0];
-    expect(insertValues).toEqual(expect.objectContaining({
-      sourceMailboxAddress: 'hello@mkety.com',
-      destinationMailboxId: 'mailbox-hello',
-      sourceHost: 'imap.zoho.com',
-      encryptedCredential: 'encrypted-source-credential',
-    }));
+    expect(insertValues).toEqual(
+      expect.objectContaining({
+        sourceMailboxAddress: 'hello@mkety.com',
+        destinationMailboxId: 'mailbox-hello',
+        sourceHost: 'imap.zoho.com',
+        encryptedCredential: 'encrypted-source-credential',
+      }),
+    );
     expect(insertValues).not.toHaveProperty('password');
     expect(pushMailMigrationQueue).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000001');
     expect(pushMailMigrationQueue).not.toHaveBeenCalledWith(expect.objectContaining({ password: expect.any(String) }));
     expect(mailDomains).toBeDefined();
     expect(mailMailboxes).toBeDefined();
+  });
+
+  it('cancels an archive run with a missing cursor without throwing or deleting an unknown pack', async () => {
+    mockedDb.query.mailMigrationRuns.findFirst.mockResolvedValue({ sourceType: 'archive', sourceCursor: null });
+    const formData = new FormData();
+    formData.set('runId', '00000000-0000-4000-8000-000000000001');
+
+    await expect(cancelMailMigration('mkety-ops', formData)).rejects.toThrow(
+      'redirect:/app/mkety-ops/mail/migration?cancelled=00000000-0000-4000-8000-000000000001',
+    );
+
+    expect(deleteMailContent).not.toHaveBeenCalled();
   });
 });

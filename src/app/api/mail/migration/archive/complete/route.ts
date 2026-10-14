@@ -33,9 +33,9 @@ export async function POST(request: Request) {
           uploadId: String(body?.uploadId || ''),
           files: Array.isArray(body?.files)
             ? body.files.map((file) => ({
-                name: String(file.name || ''),
-                size: Number(file.size),
-                chunks: Number(file.chunks),
+                name: String(file?.name || ''),
+                size: Number(file?.size),
+                chunks: Number(file?.chunks),
               }))
             : [],
         },

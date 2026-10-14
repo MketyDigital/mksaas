@@ -15,6 +15,7 @@ jest.mock('@/features/mail/server/archive-import-service', () => ({
 
 import {
   completeMailArchiveUpload,
+  MailArchiveImportError,
   requireMailArchiveImportAccess,
 } from '@/features/mail/server/archive-import-service';
 
@@ -62,5 +63,23 @@ describe('POST /api/mail/migration/archive/complete', () => {
     expect(response.status).toBe(403);
     expect(requireMailArchiveImportAccess).not.toHaveBeenCalled();
     expect(completeMailArchiveUpload).not.toHaveBeenCalled();
+  });
+
+  it('returns a safe manifest error for a null file entry instead of throwing', async () => {
+    (completeMailArchiveUpload as jest.Mock).mockRejectedValueOnce(new MailArchiveImportError('files'));
+    const request = new Request('https://app.mkety.com/api/mail/migration/archive/complete?tenant=mkety-ops', {
+      method: 'POST',
+      headers: { origin: 'https://app.mkety.com', 'content-type': 'application/json' },
+      body: JSON.stringify({
+        mailboxId: 'mailbox-hello',
+        uploadId: '12345678-1234-1234-1234-123456789012',
+        files: [null],
+      }),
+    });
+
+    const response = await POST(request);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'files' });
   });
 });

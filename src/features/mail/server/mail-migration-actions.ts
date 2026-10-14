@@ -7,6 +7,7 @@ import { redirect } from 'next/navigation';
 import { db } from '@/shared/db/cloudflare';
 import { mailDomains, mailMailboxes, mailMigrationRuns } from '@/shared/db/schema';
 
+import { getArchiveImportCursor } from './archive-import-cursor';
 import { pushMailMigrationQueue } from './cloudflare';
 import { deleteMailContent } from './content';
 import { encryptImapCredential, normalizeImapEndpoint } from './migration-credentials';
@@ -145,9 +146,10 @@ export async function cancelMailMigration(tenantSlug: string, formData: FormData
       ),
     );
   if (activeRun?.sourceType === 'archive') {
-    const cursor = activeRun.sourceCursor as { packKey?: string };
-    if (cursor.packKey?.startsWith(`mail/archive-staging/${access.tenant.id}/`)) {
-      await deleteMailContent(cursor.packKey).catch(() => undefined);
+    const cursor = getArchiveImportCursor(activeRun.sourceCursor);
+    const packKey = typeof cursor.packKey === 'string' ? cursor.packKey : '';
+    if (packKey.startsWith(`mail/archive-staging/${access.tenant.id}/`)) {
+      await deleteMailContent(packKey).catch(() => undefined);
     }
   }
   revalidatePath(`/app/${tenantSlug}/mail/migration`);
