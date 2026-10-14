@@ -5,7 +5,7 @@ import { type FormEvent, useState } from 'react';
 
 import { Button } from '@/shared/components/ui';
 
-import { formatArchiveChunkFailure } from './archive-upload-error';
+import { formatArchiveChunkFailure, formatArchiveCompleteFailure } from './archive-upload-error';
 
 const CHUNK_BYTES = 256_000;
 
@@ -92,13 +92,11 @@ export function ArchiveUploadForm({
       } | null;
       if (!response.ok || !result?.runId) {
         throw new Error(
-          result?.error === 'size'
-            ? 'One or more files exceed the allowed size.'
-            : result?.error === 'type'
-              ? 'Choose EML, MBOX or ZIP files.'
-              : result?.error === 'active'
-                ? 'An archive import is already running. Wait for it to finish before starting another.'
-                : 'The server could not validate the uploaded files. No import was started.',
+          formatArchiveCompleteFailure({
+            status: response.status,
+            rayId: response.headers.get('cf-ray'),
+            errorCode: result?.error,
+          }),
         );
       }
       router.push(
