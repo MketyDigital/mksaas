@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { safeArchiveMessageErrorCode } from '@/features/mail/server/archive-import-errors';
 import {
   archiveUploadChunkKey,
   MAX_ARCHIVE_CHUNK_BYTES,
@@ -65,6 +66,7 @@ export async function POST(request: Request) {
     console.error('[mail-archive] chunk upload failed', {
       stage,
       errorName: error instanceof Error ? error.name : 'unknown',
+      safeErrorCode: safeArchiveMessageErrorCode(error),
     });
     throw error;
   }
