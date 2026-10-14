@@ -266,13 +266,27 @@ export async function pushMailQueueBatch(messages:Array<Record<string,unknown>>)
   return payload?.result||payload;
 }
 
-export async function pushMailMigrationQueue(runId:string){
+export async function pushMailMigrationQueue(runId:string,kind?:'archive'){
+  const secret=process.env.MKETY_MAIL_INTERNAL_SECRET||'';
+  const base=(process.env.MKETY_MAIL_INTERNAL_API_URL||'https://api.mkety.com').replace(/\/$/,'');
+  if(!secret) throw new Error('Mkety Mail internal queue authorization is not configured.');
+  const response=await fetch(`${base}/api/internal/mail/migrations/enqueue`,{
+    method:'POST',
+    headers:{authorization:`Bearer ${secret}`,'content-type':'application/json'},
+    body:JSON.stringify({runId,kind}),
+    cache:'no-store',
+  });
+  if(!response.ok) throw new Error('Mkety Mail migration queue rejected the run.');
+  return response.json().catch(()=>({ok:true}));
+}
+
+export async function publishMailMigrationQueue(runId:string,kind?:'archive'){
   const {accountId}=env();
   const queueId=process.env.MKETY_MAIL_MIGRATION_QUEUE_ID||'';
   if(!accountId||!queueId) throw new Error('Mkety Mail migration queue is not configured.');
   const payload=await cfFetch(`/accounts/${encodeURIComponent(accountId)}/queues/${encodeURIComponent(queueId)}/messages/batch`,{
     method:'POST',
-    body:JSON.stringify({messages:[{body:{runId},content_type:'json'}]}),
+    body:JSON.stringify({messages:[{body:{runId,...(kind?{kind}:{})},content_type:'json'}]}),
   });
   return payload?.result||payload;
 }

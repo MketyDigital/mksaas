@@ -8,6 +8,7 @@ import { db } from '@/shared/db/cloudflare';
 import { mailDomains, mailMailboxes, mailMigrationRuns } from '@/shared/db/schema';
 
 import { pushMailMigrationQueue } from './cloudflare';
+import { deleteMailContent } from './content';
 import { encryptImapCredential, normalizeImapEndpoint } from './migration-credentials';
 import { getMailWorkspace, requireMailWorkspaceAccess } from './workspace';
 
@@ -121,6 +122,13 @@ export async function cancelMailMigration(tenantSlug: string, formData: FormData
     throw new Error('Mail migration requires workspace manager access.');
   const runId = String(formData.get('runId') || '');
   if (!/^[0-9a-f-]{36}$/i.test(runId)) redirect(`/app/${tenantSlug}/mail/migration?error=migration-run`);
+  const activeRun = await db.query.mailMigrationRuns.findFirst({
+    where: and(
+      eq(mailMigrationRuns.id, runId),
+      eq(mailMigrationRuns.tenantId, access.tenant.id),
+      inArray(mailMigrationRuns.status, ['queued', 'running']),
+    ),
+  });
   await db
     .update(mailMigrationRuns)
     .set({
@@ -136,6 +144,12 @@ export async function cancelMailMigration(tenantSlug: string, formData: FormData
         inArray(mailMigrationRuns.status, ['queued', 'running']),
       ),
     );
+  if (activeRun?.sourceType === 'archive') {
+    const cursor = activeRun.sourceCursor as { packKey?: string };
+    if (cursor.packKey?.startsWith(`mail/archive-staging/${access.tenant.id}/`)) {
+      await deleteMailContent(cursor.packKey).catch(() => undefined);
+    }
+  }
   revalidatePath(`/app/${tenantSlug}/mail/migration`);
   redirect(`/app/${tenantSlug}/mail/migration?cancelled=${runId}`);
 }

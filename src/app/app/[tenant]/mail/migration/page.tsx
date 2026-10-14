@@ -3,6 +3,7 @@ import { Download, FileUp, MoveRight } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
+import { ArchiveUploadForm } from '@/features/mail/components/archive-upload-form';
 import {
   cancelMailMigration,
   resumeMailMigration,
@@ -20,7 +21,15 @@ export default async function MailMigrationPage({
   searchParams,
 }: {
   params: Promise<{ tenant: string }>;
-  searchParams: Promise<{ imported?: string; error?: string; run?: string; started?: string; cancelled?: string }>;
+  searchParams: Promise<{
+    imported?: string;
+    error?: string;
+    run?: string;
+    started?: string;
+    cancelled?: string;
+    queued?: string;
+    total?: string;
+  }>;
 }) {
   const { tenant: tenantSlug } = await params;
   const query = await searchParams;
@@ -70,6 +79,11 @@ export default async function MailMigrationPage({
           IMAP migration queued. The source mailbox will be read only.
         </p>
       ) : null}
+      {query.queued ? (
+        <p className="rounded-xl border bg-emerald-500/5 p-3 text-sm">
+          Archive accepted: {query.total || 'messages'} message(s) queued. Progress will update in Recent import runs.
+        </p>
+      ) : null}
       {query.cancelled ? (
         <p className="rounded-xl border bg-muted p-3 text-sm">
           Migration cancelled. Saved source credentials were removed.
@@ -77,7 +91,9 @@ export default async function MailMigrationPage({
       ) : null}
       {query.error ? (
         <p className="rounded-xl border bg-destructive/5 p-3 text-sm text-destructive">
-          The migration request could not be completed safely. Check the mailbox, file type and size limits.
+          {query.error === 'upload-version'
+            ? 'Reload this page and use Import messages to upload the archive in resumable pieces.'
+            : 'The migration request could not be completed safely. Check the mailbox, file type and size limits.'}
         </p>
       ) : null}
 
@@ -120,44 +136,15 @@ export default async function MailMigrationPage({
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form
-              action={`/api/mail/migration/archive?tenant=${encodeURIComponent(tenantSlug)}`}
-              className="grid gap-3"
-              encType="multipart/form-data"
-              method="post"
-            >
-              <label className="grid gap-2 text-sm font-medium">
-                Destination mailbox
-                <select className="rounded-xl border bg-background px-3 py-2.5" name="mailboxId" required>
-                  <option value="">Choose mailbox</option>
-                  {mailboxes
-                    .filter((item) => item.status === 'active')
-                    .map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.localPart}@{domainById.get(item.domainId) ?? 'domain'}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <label className="grid gap-2 text-sm font-medium">
-                EML, MBOX or ZIP files
-                <input
-                  accept=".eml,.mbox,.zip,message/rfc822,application/zip"
-                  className="rounded-xl border p-3"
-                  multiple
-                  name="files"
-                  required
-                  type="file"
-                />
-              </label>
-              <p className="text-xs text-muted-foreground">
-                Up to 20 files per batch, 10 MB per file, 25 MB total, and 2,000 messages per archive batch. ZIP accepts
-                EML/MBOX only. Original EML content is preserved.
-              </p>
-              <Button className="w-fit" type="submit">
-                Import messages
-              </Button>
-            </form>
+            <ArchiveUploadForm
+              tenantSlug={tenantSlug}
+              mailboxOptions={mailboxes
+                .filter((item) => item.status === 'active')
+                .map((item) => ({
+                  id: item.id,
+                  address: `${item.localPart}@${domainById.get(item.domainId) ?? 'domain'}`,
+                }))}
+            />
           </CardContent>
         </Card>
       </div>
@@ -296,11 +283,13 @@ export default async function MailMigrationPage({
                 <span>
                   <strong>{run.sourceMailboxAddress}</strong> →{' '}
                   {mailboxes.find((item) => item.id === run.destinationMailboxId)?.localPart ?? 'mailbox'} ·{' '}
-                  {run.status}
+                  {run.sourceType} · {run.status}
                 </span>
                 <span className="flex items-center gap-3 text-muted-foreground">
                   {run.importedMessages} imported · {run.skippedMessages} skipped · {run.failedMessages} failed
-                  {run.safeErrorCode ? <span className="text-destructive"> · first failure: {run.safeErrorCode}</span> : null}
+                  {run.safeErrorCode ? (
+                    <span className="text-destructive"> · first failure: {run.safeErrorCode}</span>
+                  ) : null}
                   {['queued', 'running'].includes(run.status) ? (
                     <form action={cancelMailMigration.bind(null, tenantSlug)}>
                       <input name="runId" type="hidden" value={run.id} />

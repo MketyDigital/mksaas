@@ -1,13 +1,13 @@
 import { getMailInternalSecret } from './runtime-config';
 
-export async function fetchMailContent(key:string){
+export async function fetchMailContent(key:string,range?:{offset:number;length:number}){
   const url=process.env.MKETY_MAIL_CONTENT_URL||'';
   const secret=getMailInternalSecret();
   if(!url||!secret||!key) return null;
   const response=await fetch(url,{
     method:'POST',
     headers:{authorization:`Bearer ${secret}`,'content-type':'application/json'},
-    body:JSON.stringify({key}),
+    body:JSON.stringify({key,...(range?{range}:{})}),
     cache:'no-store',
   });
   if(!response.ok) return null;
@@ -77,4 +77,24 @@ export async function storeMailContent(
   });
   if(!response.ok) throw new Error('Mkety Mail content storage rejected the migration object.');
   return response.json().catch(()=>({ok:true,key}));
+}
+
+export async function deleteMailContent(key:string){
+  const url=process.env.MKETY_MAIL_CONTENT_URL||'';
+  const secret=getMailInternalSecret();
+  if(!url||!secret||!key.startsWith('mail/')||key.includes('..')) {
+    throw new Error('Mkety Mail content storage is not configured.');
+  }
+  const response=await fetch(url,{
+    method:'POST',
+    headers:{
+      authorization:`Bearer ${secret}`,
+      'content-type':'application/json',
+      'x-mkety-operation':'delete',
+      'x-mkety-key':key,
+    },
+    body:'{}',
+    cache:'no-store',
+  });
+  if(!response.ok) throw new Error('Mkety Mail content storage could not remove the staging object.');
 }

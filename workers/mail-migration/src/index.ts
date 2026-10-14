@@ -4,7 +4,7 @@ import { connect } from 'cloudflare:sockets';
 import { assertPublicImapSocketPeer, ImapSession, validateImapEndpoint } from './imap-session';
 
 type MigrationCursor = Record<string, { uidValidity: string; lastUid: string }>;
-type QueueBody = { runId: string };
+type QueueBody = { runId: string; kind?: 'archive' };
 type ClaimedRun = {
   id: string;
   host: string;
@@ -150,6 +150,17 @@ async function processRun(env: Env, runId: string) {
   }
 }
 
+async function processArchiveRun(env: Env, runId: string) {
+  const response = await internalRequest(env, '/api/internal/mail/migrations/archive-batch', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ runId }),
+  });
+  if (!response.ok) throw new Error('archive_batch_failed');
+  const result = (await response.json()) as { done?: boolean };
+  if (!result.done) await env.MAIL_MIGRATION_QUEUE.send({ runId, kind: 'archive' });
+}
+
 export default {
   async queue(batch: MessageBatch<QueueBody>, env: Env) {
     for (const message of batch.messages) {
@@ -159,11 +170,18 @@ export default {
         continue;
       }
       try {
-        await processRun(env, runId);
+        if (message.body.kind === 'archive') await processArchiveRun(env, runId);
+        else await processRun(env, runId);
         message.ack();
       } catch {
         if (message.attempts >= 5) {
-          await updateProgress(env, runId, 'failed', undefined, 'imap_migration_retry_limit');
+          await updateProgress(
+            env,
+            runId,
+            'failed',
+            undefined,
+            message.body.kind === 'archive' ? 'archive_migration_retry_limit' : 'imap_migration_retry_limit',
+          );
           message.ack();
         } else {
           message.retry({ delaySeconds: Math.min(60, 2 ** message.attempts) });
