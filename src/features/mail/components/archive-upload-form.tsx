@@ -5,6 +5,7 @@ import { type FormEvent, useState } from 'react';
 
 import { Button } from '@/shared/components/ui';
 
+import { postArchiveChunkWithRetry } from './archive-upload-chunk';
 import { formatArchiveChunkFailure, formatArchiveCompleteFailure } from './archive-upload-error';
 
 const CHUNK_BYTES = 256_000;
@@ -52,13 +53,15 @@ export function ArchiveUploadForm({
           const start = chunkIndex * CHUNK_BYTES;
           let response: Response;
           try {
-            response = await fetch(
-              `/api/mail/migration/archive/chunk?tenant=${encodeURIComponent(tenantSlug)}&uploadId=${uploadId}&fileIndex=${fileIndex}&chunkIndex=${chunkIndex}`,
-              {
-                method: 'POST',
-                headers: { 'content-type': 'application/octet-stream' },
-                body: file.slice(start, start + CHUNK_BYTES),
-              },
+            response = await postArchiveChunkWithRetry(() =>
+              fetch(
+                `/api/mail/migration/archive/chunk?tenant=${encodeURIComponent(tenantSlug)}&uploadId=${uploadId}&fileIndex=${fileIndex}&chunkIndex=${chunkIndex}`,
+                {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/octet-stream' },
+                  body: file.slice(start, start + CHUNK_BYTES),
+                },
+              ),
             );
           } catch {
             throw new Error(formatArchiveChunkFailure({ fileName: file.name, chunkIndex, chunkCount: chunks }));
