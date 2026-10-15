@@ -92,7 +92,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$D1_TOKEN_SOURCE" == saas ]]; then export CLOUDFLARE_API_TOKEN="$MKETY_ASSIST_CF_SAAS_TOKEN"; fi
-          node scripts/run-starpips-credit-audit.mjs
+          node ../../.github/scripts/run-starpips-credit-audit.mjs
 
       - name: Upload sanitized aggregate report
         uses: actions/upload-artifact@v4
