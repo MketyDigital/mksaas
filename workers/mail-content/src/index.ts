@@ -7,7 +7,7 @@ type R2Object={
 
 type Bucket={
   get(key:string,options?:{range:{offset:number;length:number}}):Promise<R2Object|null>;
-  put(key:string,value:ArrayBuffer|Uint8Array|string,options?:{httpMetadata?:{contentType?:string}}):Promise<unknown>;
+  put(key:string,value:ReadableStream<Uint8Array>|ArrayBuffer|Uint8Array|string,options?:{httpMetadata?:{contentType?:string}}):Promise<unknown>;
   delete(key:string):Promise<void>;
 };
 
@@ -30,12 +30,33 @@ export default {
       if(!key.startsWith('mail/')||key.includes('..')) return new Response('Invalid key',{status:400});
       const length=Number(request.headers.get('content-length')||0);
       if(Number.isFinite(length)&&length>25_000_000) return new Response('Payload too large',{status:413});
-      const bytes=await request.arrayBuffer();
-      if(bytes.byteLength<=0||bytes.byteLength>25_000_000) return new Response('Payload too large',{status:413});
-      await env.MAIL_STORAGE.put(key,bytes,{
-        httpMetadata:{contentType:request.headers.get('content-type')||'application/octet-stream'},
-      });
-      return Response.json({ok:true,key,size:bytes.byteLength});
+      if(!request.body) return new Response('Payload required',{status:400});
+      let received=0;
+      let tooLarge=false;
+      const limitedBody=request.body.pipeThrough(new TransformStream<Uint8Array,Uint8Array>({
+        transform(chunk,controller){
+          received+=chunk.byteLength;
+          if(received>25_000_000){
+            tooLarge=true;
+            throw new Error('Payload too large');
+          }
+          controller.enqueue(chunk);
+        },
+      }));
+      try{
+        await env.MAIL_STORAGE.put(key,limitedBody,{
+          httpMetadata:{contentType:request.headers.get('content-type')||'application/octet-stream'},
+        });
+      }catch(error){
+        await env.MAIL_STORAGE.delete(key).catch(()=>undefined);
+        if(tooLarge) return new Response('Payload too large',{status:413});
+        throw error;
+      }
+      if(received<=0||(length>0&&received!==length)){
+        await env.MAIL_STORAGE.delete(key);
+        return new Response('Invalid payload size',{status:400});
+      }
+      return Response.json({ok:true,key,size:received});
     }
 
     if(operation==='delete'){

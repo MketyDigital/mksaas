@@ -61,8 +61,9 @@ export async function storeMailContent(
   if(bytes.byteLength<=0||bytes.byteLength>25_000_000){
     throw new Error('Mail content is outside the supported migration size.');
   }
-  const bodyBytes=new Uint8Array(bytes.byteLength);
-  bodyBytes.set(bytes);
+  const body=bytes.buffer instanceof ArrayBuffer&&bytes.byteOffset===0&&bytes.byteLength===bytes.buffer.byteLength
+    ? bytes.buffer
+    : bytes.slice().buffer as ArrayBuffer;
   const response=await fetch(url,{
     method:'POST',
     headers:{
@@ -72,7 +73,7 @@ export async function storeMailContent(
       'x-mkety-operation':'put',
       'x-mkety-key':key,
     },
-    body:bodyBytes,
+    body,
     cache:'no-store',
   });
   if(!response.ok) throw new Error('Mkety Mail content storage rejected the migration object.');
