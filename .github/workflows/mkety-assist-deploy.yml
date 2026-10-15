@@ -279,14 +279,14 @@ jobs:
             local url="$2"
             local request_body="${3:-}"
             local response status body
-            local -a args=(--silent --show-error --write-out $'\\n%{http_code}' -X "$method" "$url"
+            local -a args=(--silent --show-error --write-out $'\n%{http_code}' -X "$method" "$url"
               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
             if [ -n "$request_body" ]; then
               args+=(-H "Content-Type: application/json" --data "$request_body")
             fi
             response="$(curl "${args[@]}" || true)"
-            status="${response##*$'\\n'}"
-            body="${response%$'\\n'*}"
+            status="${response##*$'\n'}"
+            body="${response%$'\n'*}"
             if [[ ! "$status" =~ ^2[0-9]{2}$ ]]; then
               CLOUDFLARE_HTTP_STATUS="$status" CLOUDFLARE_RESPONSE_BODY="$body" node - <<'NODE' >&2
           const status=process.env.CLOUDFLARE_HTTP_STATUS||'unknown';
@@ -294,8 +294,8 @@ jobs:
           try {
             const payload=JSON.parse(process.env.CLOUDFLARE_RESPONSE_BODY||'');
             detail=(payload.errors||[]).map((error)=>{
-              let message=String(error.message||'').replaceAll(process.env.CLOUDFLARE_API_TOKEN||'\\0','[redacted]');
-              message=message.replaceAll(process.env.CLOUDFLARE_ACCOUNT_ID||'\\0','[redacted]').slice(0,240);
+              let message=String(error.message||'').replaceAll(process.env.CLOUDFLARE_API_TOKEN||'\0','[redacted]');
+              message=message.replaceAll(process.env.CLOUDFLARE_ACCOUNT_ID||'\0','[redacted]').slice(0,240);
               return (error.code?String(error.code)+': ':'')+message;
             }).filter(Boolean).join('; ');
           } catch {}
