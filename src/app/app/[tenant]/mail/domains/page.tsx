@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { CheckCircle2, CircleDashed, Globe2, ShieldCheck } from 'lucide-react';
 
-import { addMailDomain } from '@/features/mail/server/domain-actions';
+import { addMailDomain, retryMailDomainSetup } from '@/features/mail/server/domain-actions';
 import { requireMailWorkspaceAccess } from '@/features/mail/server/workspace';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/components/ui';
 import { PageHeader } from '@/shared/components/ui/page-header';
@@ -28,6 +28,10 @@ export default async function MailDomainsPage({params,searchParams}:{params:Prom
         {query.error==="domain"&&<div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm">Enter a valid domain such as company.com.</div>}
         {query.error==="reserved-domain"&&<div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm">The mkety.com root is reserved for Zoho inbound mail. Use mail.mkety.com for first-party outbound sending.</div>}
         {query.error==="claimed"&&<div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm">This domain is already connected to another Mkety Mail workspace.</div>}
+        {query.setup==="error"&&<div role="status" className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm">Mkety could not reach the domain setup service. Check the Mail Cloudflare integration, then retry setup.</div>}
+        {query.setup==="guided"&&<div role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm">No connected Cloudflare zone was found for this domain. Automatic routing and sender records are not active yet. An administrator needs to connect the domain’s DNS provider before setup can continue.</div>}
+        {query.setup==="waiting"&&<div role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm">The domain was found, but the required DNS checks are still pending. Retry after the DNS records have propagated.</div>}
+        {query.setup==="ready"&&<div role="status" className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm">Domain setup has been refreshed successfully.</div>}
         <form action={action} className="flex flex-col gap-3 sm:flex-row">
           <input className="min-w-0 flex-1 rounded-xl border bg-background px-4 py-3 outline-none focus:border-primary" name="domain" placeholder="company.com" required/>
           <button className="rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground">Connect domain</button>
@@ -39,7 +43,7 @@ export default async function MailDomainsPage({params,searchParams}:{params:Prom
       {domains.map(domain=><Card className="rounded-2xl" key={domain.id}>
         <CardHeader>
           <div className="flex items-start justify-between gap-4">
-            <div><CardTitle>{domain.domain}</CardTitle><CardDescription>{domain.routingEnabled?'Incoming mail routing is connected.':'Connection is waiting for domain setup.'}</CardDescription></div>
+            <div><CardTitle>{domain.domain}</CardTitle><CardDescription>{domain.routingEnabled?'Incoming mail routing is connected.':domain.domain==='mkety.com'&&domain.sendingEnabled?'Outbound sending is configured; inbound routing remains with the existing provider.':'Connection is waiting for domain setup.'}</CardDescription></div>
             <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium">{domain.routingEnabled?'Connected':'Setup needed'}</span>
           </div>
         </CardHeader>
@@ -55,7 +59,8 @@ export default async function MailDomainsPage({params,searchParams}:{params:Prom
               <p className="mt-1 text-xs text-muted-foreground">{status==='verified'?'Ready':'Mkety is checking this'}</p>
             </div>)}
           </div>
-          {!domain.routingEnabled&&<div className="mt-4 rounded-xl bg-muted/50 p-4 text-sm"><div className="flex gap-2"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary"/><p>This domain is not yet inside Mkety DNS. We’ll use the guided connection flow so you do not need to paste infrastructure credentials into Mkety.</p></div></div>}
+          {!domain.routingEnabled&&<div className="mt-4 rounded-xl bg-muted/50 p-4 text-sm"><div className="flex gap-2"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary"/><p>{domain.domain==='mkety.com'?'Incoming mail stays with the existing provider. Mkety configures outbound sending only for this first-party domain.':'No inbound routing is active for this domain yet. Connect its DNS zone in Cloudflare, then retry setup.'}</p></div></div>}
+          {domain.status!=='ready'&&<form action={retryMailDomainSetup.bind(null,tenant,domain.id)} className="mt-4"><button className="rounded-xl border px-4 py-2 text-sm font-semibold hover:bg-muted">Retry domain setup</button></form>}
         </CardContent>
       </Card>)}
       {!domains.length&&<Card className="rounded-2xl"><CardContent className="py-8 text-sm text-muted-foreground">No domain connected yet.</CardContent></Card>}
