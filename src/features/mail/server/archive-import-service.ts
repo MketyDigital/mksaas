@@ -196,6 +196,9 @@ export async function completeMailArchiveUpload(
       messageOffsets.push({ offset: packOffset, size: message.raw.byteLength, folderPath: message.folderPath });
       packOffset += message.raw.byteLength;
     }
+    // The packed buffer now owns the bytes. Drop per-message references before
+    // posting the nearly 25 MB object to the content Worker.
+    packedMessages.length = 0;
     const packKey = `mail/archive-staging/${authorized.tenant.id}/${input.uploadId}/message-pack`;
     stage = 'store_message_pack';
     await storeMailContent(packKey, messagePack, 'application/octet-stream');
