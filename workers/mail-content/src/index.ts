@@ -16,6 +16,8 @@ type Env={
   MKETY_MAIL_INTERNAL_SECRET:string;
 };
 
+declare const FixedLengthStream: new(length:number)=>TransformStream<Uint8Array,Uint8Array>;
+
 export default {
   async fetch(request:Request,env:Env):Promise<Response>{
     const expected=env.MKETY_MAIL_INTERNAL_SECRET||'';
@@ -28,35 +30,36 @@ export default {
     if(operation==='put'){
       const key=String(request.headers.get('x-mkety-key')||'');
       if(!key.startsWith('mail/')||key.includes('..')) return new Response('Invalid key',{status:400});
-      const length=Number(request.headers.get('content-length')||0);
-      if(Number.isFinite(length)&&length>25_000_000) return new Response('Payload too large',{status:413});
+      const rawLength=request.headers.get('content-length');
+      const length=rawLength===null?Number.NaN:Number(rawLength);
+      if(!Number.isSafeInteger(length)||length<=0) return new Response('Invalid payload size',{status:400});
+      if(length>25_000_000) return new Response('Payload too large',{status:413});
       if(!request.body) return new Response('Payload required',{status:400});
-      let received=0;
-      let tooLarge=false;
-      const limitedBody=request.body.pipeThrough(new TransformStream<Uint8Array,Uint8Array>({
-        transform(chunk,controller){
-          received+=chunk.byteLength;
-          if(received>25_000_000){
-            tooLarge=true;
-            throw new Error('Payload too large');
-          }
-          controller.enqueue(chunk);
-        },
-      }));
+      const fixedLengthBody=new FixedLengthStream(length);
+      let bodyTransferFailed=false;
+      const bodyTransfer=request.body.pipeTo(fixedLengthBody.writable).catch((error)=>{
+        bodyTransferFailed=true;
+        throw error;
+      });
       try{
-        await env.MAIL_STORAGE.put(key,limitedBody,{
-          httpMetadata:{contentType:request.headers.get('content-type')||'application/octet-stream'},
-        });
+        await Promise.all([
+          env.MAIL_STORAGE.put(key,fixedLengthBody.readable,{
+            httpMetadata:{contentType:request.headers.get('content-type')||'application/octet-stream'},
+          }),
+          bodyTransfer,
+        ]);
       }catch(error){
         await env.MAIL_STORAGE.delete(key).catch(()=>undefined);
-        if(tooLarge) return new Response('Payload too large',{status:413});
+        if(bodyTransferFailed) return new Response('Invalid payload size',{status:400});
+        const errorCode=error instanceof Error?(/\((\d{5})\)\s*$/.exec(error.message)?.[1]||'unknown'): 'unknown';
+        console.error('[mail-content] R2 object write failed',{
+          stage:'put_r2',
+          errorName:error instanceof Error?error.name:'unknown',
+          errorCode,
+        });
         throw error;
       }
-      if(received<=0||(length>0&&received!==length)){
-        await env.MAIL_STORAGE.delete(key);
-        return new Response('Invalid payload size',{status:400});
-      }
-      return Response.json({ok:true,key,size:received});
+      return Response.json({ok:true,key,size:length});
     }
 
     if(operation==='delete'){

@@ -527,6 +527,54 @@ jobs:
           console.log('First-party tenant and Mail storage bindings verified on authenticated app-host Worker.');
           NODE
 
+          # Exercise the authenticated content Worker and its R2 binding with a
+          # tiny, unique object before declaring the Mail release healthy.
+          smoke_key="mail/deploy-smoke/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$(openssl rand -hex 4)"
+          smoke_payload=/tmp/mkety-mail-content-smoke.bin
+          smoke_retrieved=/tmp/mkety-mail-content-smoke-retrieved.bin
+          printf 'mkety-mail-content-smoke:%s:%s' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > "$smoke_payload"
+          cleanup_content_smoke() {
+            curl --connect-timeout 5 --max-time 15 -sS -o /dev/null -X POST \
+              -H "Authorization: Bearer $internal_secret" \
+              -H 'x-mkety-operation: delete' \
+              -H "x-mkety-key: $smoke_key" \
+              https://mail-content.mkety.com || true
+          }
+          trap cleanup_content_smoke EXIT
+          put_code='000'
+          for attempt in 1 2 3 4 5; do
+            put_code="$(curl --connect-timeout 5 --max-time 20 -sS -o /tmp/mkety-mail-content-smoke-put.json -w '%{http_code}' \
+              -X POST \
+              -H "Authorization: Bearer $internal_secret" \
+              -H 'x-mkety-operation: put' \
+              -H "x-mkety-key: $smoke_key" \
+              -H 'Content-Type: application/octet-stream' \
+              --data-binary "@$smoke_payload" \
+              https://mail-content.mkety.com || true)"
+            [ "$put_code" = '200' ] && break
+            echo "Authenticated Mail content R2 put attempt $attempt: HTTP $put_code"
+            sleep 3
+          done
+          [ "$put_code" = '200' ] || {
+            echo "::error::Authenticated Mail content R2 put smoke failed with HTTP $put_code."
+            head -c 500 /tmp/mkety-mail-content-smoke-put.json 2>/dev/null || true
+            echo
+            exit 1
+          }
+          get_code="$(curl --connect-timeout 5 --max-time 20 -sS -o "$smoke_retrieved" -w '%{http_code}' \
+            -X POST \
+            -H "Authorization: Bearer $internal_secret" \
+            -H 'Content-Type: application/json' \
+            --data "{\"key\":\"$smoke_key\"}" \
+            https://mail-content.mkety.com || true)"
+          if [ "$get_code" != '200' ] || ! cmp -s "$smoke_payload" "$smoke_retrieved"; then
+            echo "::error::Authenticated Mail content R2 retrieval smoke failed with HTTP $get_code or mismatched bytes."
+            exit 1
+          fi
+          cleanup_content_smoke
+          trap - EXIT
+          echo 'Authenticated Mail content R2 put/read/delete smoke: PASS.'
+
       - name: Verify Mkety Mail application domains without changing mappings
         shell: bash
         run: |
