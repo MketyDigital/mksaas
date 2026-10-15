@@ -26,6 +26,7 @@ test("queries are scoped, bounded, select aggregates and contain no mutations", 
   assert.doesNotMatch(queries[9].sql, /p\.instructions\s*(,|FROM)/);
   assert.doesNotMatch(queries[10].sql, /content|body|text/i);
   assert.match(queries[13].sql, /d1_migrations/);
+  assert.match(queries[13].sql, /WHERE name IN/);
   assert.match(queries[14].sql, /provider_attempt_id/);
 });
 
