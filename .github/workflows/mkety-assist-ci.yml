@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'customer-apps/assist/**'
+      - '.github/scripts/assist-credit-audit*'
       - '.github/workflows/mkety-assist-ci.yml'
       - '.github/workflows/mkety-assist-starpips-credit-audit.yml'
       - '.github/workflows/mkety-assist-deploy.yml'
