@@ -11,7 +11,7 @@ test("audit input is strictly bounded", () => {
 
 test("queries are scoped, bounded, select aggregates and contain no mutations", () => {
   const queries = buildCreditAuditQueries("starpips", 30);
-  assert.equal(queries.length, 16);
+  assert.equal(queries.length, 17);
   for (const [index, { sql }] of queries.entries()) {
     assert.match(sql, /SELECT/i);
     assert.doesNotMatch(sql, /\b(INSERT|UPDATE|DELETE|REPLACE|DROP|ALTER|CREATE|VACUUM|PRAGMA)\b/i);
@@ -28,6 +28,9 @@ test("queries are scoped, bounded, select aggregates and contain no mutations", 
   assert.match(queries[13].sql, /d1_migrations/);
   assert.match(queries[13].sql, /WHERE name IN/);
   assert.match(queries[14].sql, /provider_attempt_id/);
+  assert.match(queries[12].sql, /FROM model_rates ORDER BY alias,version/);
+  assert.match(queries[16].sql, /rate_snapshot_json/);
+  assert.match(queries[16].sql, /text_multiplier_bps/);
 });
 
 test("report has a privacy declaration and cannot embed raw text fields from sources", () => {
