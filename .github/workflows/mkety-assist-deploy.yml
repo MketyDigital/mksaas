@@ -267,6 +267,37 @@ jobs:
             curl --fail-with-body --silent --show-error               -X POST "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/r2/buckets"               -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"               -H "Content-Type: application/json"               --data '{"name":"mkety-assist-media"}' >/dev/null
           fi
 
+      - name: Ensure Assist prompt cache KV namespace
+        id: prompt_cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces"
+          listed="$(curl --fail-with-body --silent --show-error "$endpoint?per_page=100" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
+          kv_id="$(LISTED="$listed" node - <<'NODE'
+          const response=JSON.parse(process.env.LISTED);
+          if(!response.success) throw new Error('Unable to list Assist prompt-cache KV namespaces.');
+          const matches=(response.result||[]).filter((ns)=>ns.title==='mkety-assist-context-cache');
+          if(matches.length>1) throw new Error('Multiple Assist prompt-cache KV namespaces exist.');
+          process.stdout.write(matches[0]?.id||'');
+          NODE
+          )"
+          if [ -z "$kv_id" ]; then
+            created="$(curl --fail-with-body --silent --show-error -X POST "$endpoint" \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              -H "Content-Type: application/json" \
+              --data '{"title":"mkety-assist-context-cache"}')"
+            kv_id="$(CREATED="$created" node - <<'NODE'
+          const response=JSON.parse(process.env.CREATED);
+          if(!response.success||!response.result?.id) throw new Error('Unable to create Assist prompt-cache KV namespace.');
+          process.stdout.write(response.result.id);
+          NODE
+          )"
+          fi
+          [[ "$kv_id" =~ ^[0-9a-fA-F]{32}$ ]] || { echo 'Cloudflare returned an invalid Assist prompt-cache namespace ID.'; exit 1; }
+          echo "kv_id=$kv_id" >> "$GITHUB_OUTPUT"
+
       - name: Ensure Assist reply queues exist
         working-directory: customer-apps/assist
         shell: bash
@@ -287,6 +318,7 @@ jobs:
         working-directory: customer-apps/assist
         env:
           D1_ID: ${{ steps.cloudflare.outputs.d1_id }}
+          PROMPT_CACHE_ID: ${{ steps.prompt_cache.outputs.kv_id }}
         run: |
           set -euo pipefail
           node - <<'NODE'
@@ -294,9 +326,17 @@ jobs:
           const p = 'wrangler.jsonc';
           const raw = fs.readFileSync(p, 'utf8');
           const configured = raw
-            .replace('__MKETY_ASSIST_D1_DATABASE_ID__', process.env.D1_ID);
+            .replace('__MKETY_ASSIST_D1_DATABASE_ID__', process.env.D1_ID)
+            .replace('__MKETY_ASSIST_CONTEXT_CACHE_ID__', process.env.PROMPT_CACHE_ID);
           fs.writeFileSync('wrangler.deploy.jsonc', configured);
           NODE
+
+      - name: Seed published prompts into Assist KV cache
+        working-directory: customer-apps/assist
+        env:
+          ASSIST_D1_ID: ${{ steps.cloudflare.outputs.d1_id }}
+          ASSIST_PROMPT_KV_ID: ${{ steps.prompt_cache.outputs.kv_id }}
+        run: node scripts/seed-published-prompts.mjs
 
       - name: Preflight validated Luna deployment and current Sol routes
         id: luna_preflight

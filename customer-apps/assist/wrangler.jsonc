@@ -18,6 +18,9 @@
   "r2_buckets": [
     { "binding": "MEDIA", "bucket_name": "mkety-assist-media" }
   ],
+  "kv_namespaces": [
+    { "binding": "CONTEXT_CACHE", "id": "__MKETY_ASSIST_CONTEXT_CACHE_ID__" }
+  ],
   "triggers": {
     "crons": ["* * * * *"]
   },

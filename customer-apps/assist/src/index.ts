@@ -4,6 +4,9 @@ import { finishOperatorOidc, startOperatorOidc } from "./operator-oidc";
 import { renderCustomerPortal, renderOperatorPortal } from "./ui";
 import { customerUsageProjection } from "./billing/metering";
 import { deriveCustomerBaseRates, deriveCustomerMediaBaseRates, withKnownProviderCosts } from "./billing/provider-derived-pricing";
+import { hasSignificantRateIncrease } from "./billing/rate-change-guard";
+import { buildCreditActivityQuery, normalizeCreditActivityFilters } from "./billing/operator-credit-activity";
+import { writePublishedPromptSnapshot } from "./conversation/context-cache";
 import { projectDomainStatus, verifyDomainEvidence } from "./domains/verification";
 import { defaultPaymentMethod, listPaymentMethods, verifyNowPaymentsSignature } from "./payments/service";
 import { validateProviderConnection } from "./providers/validation";
@@ -1100,6 +1103,48 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     return json({ entries: rows.results ?? [] });
   }
 
+  if (url.pathname === "/api/ops/credit-activity" && request.method === "GET") {
+    const filters = normalizeCreditActivityFilters(url.searchParams);
+    const query = buildCreditActivityQuery({ ...filters, limit: filters.limit + 1 });
+    const [activityRows, summaryRow] = await Promise.all([
+      env.DB.prepare(query.sql).bind(...query.values).all<any>(),
+      filters.customerId
+        ? env.DB.prepare(
+            `SELECT COUNT(*) AS customer_count,COUNT(ca.customer_id) AS funded_account_count,
+                    COALESCE(SUM(ca.balance),0) AS balance,COALESCE(SUM(ca.lifetime_granted),0) AS lifetime_granted,
+                    COALESCE(SUM(ca.lifetime_consumed),0) AS lifetime_consumed
+             FROM customers c LEFT JOIN credit_accounts ca ON ca.customer_id=c.id WHERE c.id=?`,
+          ).bind(filters.customerId).first<any>()
+        : env.DB.prepare(
+            `SELECT COUNT(*) AS customer_count,COUNT(ca.customer_id) AS funded_account_count,
+                    COALESCE(SUM(ca.balance),0) AS balance,COALESCE(SUM(ca.lifetime_granted),0) AS lifetime_granted,
+                    COALESCE(SUM(ca.lifetime_consumed),0) AS lifetime_consumed
+             FROM customers c LEFT JOIN credit_accounts ca ON ca.customer_id=c.id`,
+          ).first<any>(),
+    ]);
+    const rows = activityRows.results ?? [];
+    const hasMore = rows.length > filters.limit;
+    const activities = rows.slice(0, filters.limit).map((row: any) => ({
+      ...row,
+      amount: mkreditsFromCreditAtoms(row.amount),
+      balance_after: row.balance_after == null ? null : mkreditsFromCreditAtoms(row.balance_after),
+      payment_amount_usd: row.payment_amount_minor == null ? null : Number(row.payment_amount_minor) / 100,
+      provider_cost_usd: row.provider_cost_micros == null ? null : Number(row.provider_cost_micros) / 1_000_000,
+    }));
+    return json({
+      activities,
+      hasMore,
+      nextOffset: hasMore ? filters.offset + filters.limit : null,
+      summary: {
+        customerCount: Number(summaryRow?.customer_count || 0),
+        fundedAccountCount: Number(summaryRow?.funded_account_count || 0),
+        balance: mkreditsFromCreditAtoms(summaryRow?.balance),
+        lifetimeGranted: mkreditsFromCreditAtoms(summaryRow?.lifetime_granted),
+        lifetimeConsumed: mkreditsFromCreditAtoms(summaryRow?.lifetime_consumed),
+      },
+    });
+  }
+
   if (url.pathname === "/api/ops/pricing/calculate" && request.method === "POST") {
     const body = await readJson(request);
     const result = calculateCommercialPlan({
@@ -1416,6 +1461,19 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
           }
         }
         if (["workers-ai", "mkety-managed"].includes(target.provider)) target.validated = true;
+      }
+      const priorTargets = await env.DB.prepare(
+        "SELECT position,enabled,input_credits_per_million,output_credits_per_million,image_credits,audio_credits_per_minute FROM model_route_targets WHERE scope_key=? ORDER BY position",
+      ).bind(scopeKey).all<any>();
+      const previousRates = (priorTargets.results ?? []).map((target: any) => ({
+        enabled: target.enabled,
+        inputCreditsPerMillion: Number(target.input_credits_per_million || 0),
+        outputCreditsPerMillion: Number(target.output_credits_per_million || 0),
+        imageCredits: Number(target.image_credits || 0),
+        audioCreditsPerMinute: Number(target.audio_credits_per_minute || 0),
+      }));
+      if (hasSignificantRateIncrease(previousRates, sanitizedTargets) && body.confirmLargeRateIncrease !== true) {
+        return json({ error: "rate_increase_confirmation_required" }, 409);
       }
       if (nextStatus === "active" && !evaluateRouteReadiness("active", sanitizedTargets.map((target: any) => ({
         enabled: target.enabled,
@@ -2375,6 +2433,7 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
       env.DB.prepare("INSERT INTO audit_events (id,actor_type,actor_id,customer_id,action,target_type,target_id,created_at) VALUES (?,?,?,?,?,?,?,?)")
         .bind(id("aud"), "customer_user", session.userId, customer.customerId, "assistant.created", "assistant", assistantId, now),
     ]);
+    await writePublishedPromptSnapshot(env.CONTEXT_CACHE, customer.customerId, assistantId, 1, String(body.instructions || ""));
     return json({ id: assistantId, name, slug, modelAlias }, 201);
   }
 

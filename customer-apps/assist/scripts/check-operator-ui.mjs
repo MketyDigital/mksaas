@@ -34,7 +34,7 @@ for (const marker of [
   "data-target-make-primary", "data-target-move-up", "data-target-move-down",
   "Review route order before publish", "mRouteCurrent", "mRouteNext", "Publish new route order",
   "moveRouteTarget(targets,from,to)",
-  "To reorder provider priority",
+  "To reorder provider priority", "activityCustomer.onchange=()=>loadCreditActivity(false)", "loadOlderActivity.onclick=()=>loadCreditActivity(true)",
 ]) {
   if (!script.includes(marker)) throw new Error(`Operator model route control missing: ${marker}`);
 }
@@ -42,6 +42,10 @@ const reorderHandler = script.match(/const moveTarget=\(from,to\)=>\{([\s\S]*?)\
 if (!reorderHandler) throw new Error("Local route reorder handler missing");
 if (reorderHandler[1].includes("api(")) throw new Error("Reordering a route must not publish before the explicit save action");
 if (!script.includes("mSave.onclick=async()=>")) throw new Error("Explicit route publish action missing");
+
+for (const marker of ['id="creditActivity"', "Credits &amp; charges", "All customers", "AI usage charges", "Provider costs are internal estimates, not provider invoices."]) {
+  if (!html.includes(marker)) throw new Error(`Operator credit activity section missing: ${marker}`);
+}
 
 // Syntax check the exact JavaScript shipped to the browser.
 new Function(script);
@@ -70,7 +74,9 @@ class FakeElement {
 }
 const ids = [
   "modal","dialog","metrics","rows","providersBox","modelsBox","healthBox","auditBox",
-  "newCustomer","opsLogout","refreshCustomers","refreshModels","refreshProviders","newProvider","refreshOps"
+  "newCustomer","opsLogout","refreshCustomers","refreshModels","refreshProviders","newProvider","refreshOps",
+  "activityCustomer","activityType","activityFrom","activityTo","creditSummary","creditActivityBox",
+  "refreshCreditActivity","loadOlderActivity","activityPageStatus"
 ];
 const elements = new Map(ids.map((id) => [id, new FakeElement(id)]));
 const document = {
@@ -92,6 +98,7 @@ const fetch = async (path) => ({
     if (p.includes("/models")) return { models: [] };
     if (p.includes("/health")) return { status: "ok", activeCustomers: 0, activeAssistants: 0, webhookErrors24h: 0, overdueReminders: 0, openHandoffs: 0 };
     if (p.includes("/audit")) return { events: [] };
+    if (p.includes("/credit-activity")) return { activities: [], hasMore: false, nextOffset: null, summary: { customerCount: 0, balance: 0, lifetimeGranted: 0, lifetimeConsumed: 0 } };
     return {};
   },
 });
@@ -101,7 +108,7 @@ const setTimeout = (fn) => { if (typeof fn === "function") fn(); return 1; };
 const run = new Function("document","window","fetch","location","alert","setTimeout", script);
 run(document, window, fetch, location, alert, setTimeout);
 
-for (const id of ["newCustomer","opsLogout","refreshCustomers","refreshModels","refreshProviders","newProvider","refreshOps"]) {
+for (const id of ["newCustomer","opsLogout","refreshCustomers","refreshModels","refreshProviders","newProvider","refreshOps","refreshCreditActivity","loadOlderActivity"]) {
   if (typeof document.getElementById(id).onclick !== "function") {
     throw new Error(`${id} click handler was not bound`);
   }

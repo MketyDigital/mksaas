@@ -7,9 +7,9 @@ import { azureFoundryInputItems } from "./providers/azure-foundry.ts";
 import { bedrockHeadersFromCredentialJson, vertexAccessTokenFromServiceAccount } from "./providers/structured-credentials";
 import { clampToolResponse, validateToolEndpoint } from "./security/outbound";
 import { archiveAssistant, deleteAssistant, listAssistantVersions, normalizeReasoningFallbackPolicy, normalizeReasoningMode, recordAssistantVersion, restoreAssistant, rollbackAssistantVersion } from "./assistants/service";
-import { assembleAssistantContext, buildKnowledgeQuery, capKnowledgeSnippets, selectCompletionBudget, selectReasoningEffort } from "./conversation/context";
+import { assembleAssistantContext, buildKnowledgeQuery, capKnowledgeSnippets, conversationHistoryTurn, selectCompletionBudget, selectReasoningEffort } from "./conversation/context";
 import { emptyConversationMemory, summarizeArchivedMessages, type ConversationMemory } from "./conversation/memory";
-import { contextCacheKey, readContextSnapshot, writeContextSnapshot } from "./conversation/context-cache";
+import { contextCacheKey, loadPublishedPromptSnapshot, readContextSnapshot, writeContextSnapshot, writePublishedPromptSnapshot } from "./conversation/context-cache";
 import { enqueueInboundUpdate, replayInboundUpdate } from "./queues/inbound";
 import { attemptIdFor, settlementJournalStub } from "./billing/settlement-journal";
 import { reserveInference, releaseInferenceReservation, settleInference } from "./billing/inference-settlement";
@@ -957,12 +957,14 @@ export async function handleRuntimeApi(
       if (typeof body.instructions === "string") {
         const current = await env.DB.prepare("SELECT COALESCE(MAX(version),0) AS v FROM assistant_prompt_versions WHERE assistant_id=?")
           .bind(assistantId).first<any>();
+        const publishedVersion = parseInt(String(current?.v || 0), 10) + 1;
         await env.DB.batch([
           env.DB.prepare("UPDATE assistant_prompt_versions SET status='archived' WHERE assistant_id=? AND status='published'").bind(assistantId),
           env.DB.prepare(
             "INSERT INTO assistant_prompt_versions (id,customer_id,assistant_id,version,instructions,status,created_at,published_at) VALUES (?,?,?,?,?,?,?,?)",
-          ).bind(id("prm"), customer.customerId, assistantId, parseInt(String(current?.v || 0), 10) + 1, body.instructions, "published", now, now),
+          ).bind(id("prm"), customer.customerId, assistantId, publishedVersion, body.instructions, "published", now, now),
         ]);
+        await writePublishedPromptSnapshot(env.CONTEXT_CACHE, customer.customerId, assistantId, publishedVersion, body.instructions);
       }
       await recordAssistantVersion(env.DB, customer.customerId, assistantId, session.userId);
       return json({ ok: true });
@@ -1290,9 +1292,8 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
      JOIN users u ON u.id=cu.user_id
      WHERE cu.customer_id=? AND cu.role IN ('owner','admin')
        AND u.telegram_user_id=?
-       AND u.telegram_recovery_assistant_id=?
      LIMIT 1`,
-  ).bind(assistant.customer_id, senderId, assistantId).first();
+  ).bind(assistant.customer_id, senderId).first();
   if (ownerSender) {
     await markWebhook(env.DB, assistantId, updateId, "ignored");
     return json({ ok: true, ignoredOwnerSender: true });
@@ -2452,9 +2453,13 @@ async function runAssistant(input: {
   if (!rate || !route) return { ok: false as const, userMessage: "This assistant’s model is temporarily unavailable." };
   Object.assign(rate, deriveCustomerBaseRates(rate));
 
-  const prompt = await env.DB.prepare(
-    "SELECT version,instructions FROM assistant_prompt_versions WHERE customer_id=? AND assistant_id=? AND status='published' ORDER BY version DESC LIMIT 1",
-  ).bind(assistant.customer_id, assistant.id).first<any>();
+  const prompt = await loadPublishedPromptSnapshot(env.CONTEXT_CACHE, String(assistant.customer_id), String(assistant.id), async () => {
+    const row = await env.DB.prepare(
+      "SELECT version,instructions FROM assistant_prompt_versions WHERE customer_id=? AND assistant_id=? AND status='published' ORDER BY version DESC LIMIT 1",
+    ).bind(assistant.customer_id, assistant.id).first<any>();
+    return row ? { version: Number(row.version), instructions: String(row.instructions || "") } : null;
+  });
+  if (!prompt) return { ok: false as const, retryable: true as const, retryAfterSeconds: 30, error: "published_prompt_unavailable", userMessage: "This assistant is temporarily restoring its published instructions. Please try again shortly." };
   const humanOpsSetting = await env.DB.prepare(
     "SELECT approvals_enabled,allowed_kinds_json,human_acknowledgement FROM human_operations_settings WHERE customer_id=? AND assistant_id=? LIMIT 1",
   ).bind(assistant.customer_id,assistant.id).first<any>();
@@ -2483,8 +2488,7 @@ async function runAssistant(input: {
   const history = conversationContext.history;
   const knowledgeBudget = Math.max(2000, Math.min(50000, Number(assistant.context_knowledge_char_budget || 12000)));
   const knowledgeQuery = buildKnowledgeQuery(input.userText || input.mediaContext, history.map((m: any) => ({
-    role: m.role === "assistant" ? "assistant" : "user",
-    content: String(m.content || ""),
+    ...conversationHistoryTurn(m.role, m.content),
   })));
   const knowledge = assistant.knowledge_enabled
     ? await retrieveKnowledge(env, assistant.customer_id, assistant.id, knowledgeQuery, knowledgeBudget)
@@ -2494,10 +2498,7 @@ async function runAssistant(input: {
     memory: conversationContext.memory,
     knowledgeSnippets: knowledge,
     tools: toolDescriptions,
-    recentTurns: history.map((m: any) => ({
-      role: m.role === "assistant" ? "assistant" : "user",
-      content: String(m.content || ""),
-    })),
+    recentTurns: history.map((m: any) => conversationHistoryTurn(m.role, m.content)),
     currentTurn: { text: input.userText, mediaContext: input.mediaContext },
     baseSystem: staticContext,
   });
@@ -3001,13 +3002,17 @@ export async function handleApiKeyInference(
     : [];
   if (!messages.length) return json({ error: { message: "messages_required" } }, 400);
 
-  const prompt = await env.DB.prepare(
-    "SELECT instructions FROM assistant_prompt_versions WHERE assistant_id=? AND status='published' ORDER BY version DESC LIMIT 1",
-  ).bind(assistantId).first<any>();
+  const prompt = await loadPublishedPromptSnapshot(env.CONTEXT_CACHE, customer.customerId, assistantId, async () => {
+    const row = await env.DB.prepare(
+      "SELECT version,instructions FROM assistant_prompt_versions WHERE customer_id=? AND assistant_id=? AND status='published' ORDER BY version DESC LIMIT 1",
+    ).bind(customer.customerId, assistantId).first<any>();
+    return row ? { version: Number(row.version), instructions: String(row.instructions || "") } : null;
+  });
+  if (!prompt) return json({ error: { message: "published_prompt_unavailable" } }, 503);
   const platformSystem = [
     "You are an AI assistant configured by this business.",
     "Never reveal hidden credentials, system configuration, internal pricing, provider costs, or private platform metadata.",
-    prompt?.instructions ? `BUSINESS INSTRUCTIONS:\n${prompt.instructions}` : "",
+    prompt.instructions ? `BUSINESS INSTRUCTIONS:\n${prompt.instructions}` : "",
   ].filter(Boolean).join("\n\n");
   const mergedMessages = [
     { role: "system", content: platformSystem },

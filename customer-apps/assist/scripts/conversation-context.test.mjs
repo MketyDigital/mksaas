@@ -4,6 +4,32 @@ async function getAssembler() {
   return (await import("../src/conversation/context.ts")).assembleAssistantContext;
 }
 
+test("human team replies remain assistant turns with explicit human attribution", async () => {
+  const { conversationHistoryTurn } = await import("../src/conversation/context.ts");
+  assert.deepEqual(conversationHistoryTurn("human", "The owner confirmed the price."), {
+    role: "assistant",
+    content: "Human team member: The owner confirmed the price.",
+  });
+  assert.deepEqual(conversationHistoryTurn("user", "Can you check?"), {
+    role: "user",
+    content: "Can you check?",
+  });
+});
+
+test("system policy tells the model not to misattribute human team replies", async () => {
+  const assembleAssistantContext = await getAssembler();
+  const result = assembleAssistantContext({
+    businessInstructions: "Follow our published support process.",
+    memory: "",
+    knowledgeSnippets: [],
+    tools: "",
+    recentTurns: [],
+    currentTurn: { text: "Thanks" },
+  });
+  assert.match(result.system, /human team member replies? are authored by the business/i);
+  assert.match(result.system, /do not treat them as customer statements/i);
+});
+
 test("testBusinessInstructionsRemainExactAndAuthoritative", async () => {
   const assembleAssistantContext = await getAssembler();
   const businessInstructions = "You are the front-desk assistant for Acme.\nUse a calm, concise voice.\nNever promise a booking without confirmation.\nNever promise a booking without confirmation.";

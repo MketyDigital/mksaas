@@ -69,6 +69,70 @@ test("testPromptEditChangesCacheVersion", async () => {
   assert.notEqual(contextCacheKey(base), contextCacheKey({ ...base, sourceVersion: "published-v4" }));
 });
 
+test("published prompt snapshots are tenant scoped and preserve versioned instructions", async () => {
+  const { readPublishedPromptSnapshot, writePublishedPromptSnapshot } = await getCache();
+  const values = new Map();
+  const kv = {
+    get: async (key) => values.get(key) || null,
+    put: async (key, value, options) => { values.set(key, value); kv.options = options; },
+    delete: async (key) => values.delete(key),
+  };
+  await writePublishedPromptSnapshot(kv, "customer-a", "assistant-a", 7, "Use the support policy.");
+  assert.deepEqual(await readPublishedPromptSnapshot(kv, "customer-a", "assistant-a"), {
+    version: 7,
+    instructions: "Use the support policy.",
+  });
+  assert.equal(await readPublishedPromptSnapshot(kv, "customer-b", "assistant-a"), null);
+  assert.equal(kv.options.expirationTtl, 86400);
+});
+
+test("published prompt snapshot writes without a readback on success", async () => {
+  const { writePublishedPromptSnapshot } = await getCache();
+  const calls = [];
+  const kv = {
+    get: async () => { calls.push("get"); return null; },
+    put: async (...args) => { calls.push(["put", ...args]); },
+  };
+  await writePublishedPromptSnapshot(kv, "customer-a", "assistant-a", 3, "current prompt");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], "put");
+  assert.equal(calls[0][3].expirationTtl, 86400);
+});
+
+test("published prompt snapshot removes an old value when KV refresh fails", async () => {
+  const { readPublishedPromptSnapshot, writePublishedPromptSnapshot } = await getCache();
+  let stored = null;
+  const kv = {
+    get: async () => stored,
+    put: async () => { throw new Error("KV unavailable"); },
+    delete: async () => { stored = null; },
+  };
+  stored = JSON.stringify({ sourceVersion: "published-prompt-snapshot-v1", value: JSON.stringify({ version: 2, instructions: "old prompt" }) });
+  await writePublishedPromptSnapshot(kv, "customer-a", "assistant-a", 3, "new prompt");
+  assert.equal(await readPublishedPromptSnapshot(kv, "customer-a", "assistant-a"), null);
+});
+
+test("published prompt loader uses a snapshot only when the D1 read errors", async () => {
+  const { loadPublishedPromptSnapshot, readPublishedPromptSnapshot, writePublishedPromptSnapshot } = await getCache();
+  const values = new Map();
+  const kv = { get: async (key) => values.get(key) || null, put: async (key, value) => values.set(key, value) };
+  await writePublishedPromptSnapshot(kv, "c", "a", 2, "published instructions");
+  const fallback = await loadPublishedPromptSnapshot(kv, "c", "a", async () => { throw new Error("D1 timeout"); });
+  assert.deepEqual(fallback, { version: 2, instructions: "published instructions" });
+  const missing = await loadPublishedPromptSnapshot(kv, "c", "a", async () => null);
+  assert.equal(missing, null);
+  assert.deepEqual(await readPublishedPromptSnapshot(kv, "c", "a"), { version: 2, instructions: "published instructions" });
+});
+
+test("published prompt loader falls back after a slow D1 read", async () => {
+  const { loadPublishedPromptSnapshot, writePublishedPromptSnapshot } = await getCache();
+  const values = new Map();
+  const kv = { get: async (key) => values.get(key) || null, put: async (key, value) => values.set(key, value) };
+  await writePublishedPromptSnapshot(kv, "c", "a", 4, "cached published instructions");
+  const fallback = await loadPublishedPromptSnapshot(kv, "c", "a", () => new Promise(() => {}), 5);
+  assert.deepEqual(fallback, { version: 4, instructions: "cached published instructions" });
+});
+
 test("testMemoryClearRejectsEarlierSnapshot", async () => {
   const { contextCacheKey, readContextSnapshot } = await getCache();
   const beforeClear = { customerId: "c", assistantId: "a", conversationId: "thread", kind: "conversation_context", sourceVersion: "cutoff-0/latest-10" };
