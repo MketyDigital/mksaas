@@ -15,6 +15,8 @@ describe('Wallet security and settlement contracts', () => {
 
     expect(page).toContain("import { requireTenantMembership } from '@/shared/lib/permissions';");
     expect(page).toContain('await requireTenantMembership(tenantSlug);');
+    expect(page).toContain("import { withRequestDatabase } from '@/shared/db/request';");
+    expect(page).toContain('return withRequestDatabase(() => renderWalletPage(props));');
     expect(page).not.toContain('await auth();');
   });
 

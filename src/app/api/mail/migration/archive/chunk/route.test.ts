@@ -12,6 +12,11 @@ jest.mock('@/features/mail/server/archive-import-service', () => ({
 
 jest.mock('@/features/mail/server/content', () => ({ storeMailContent: jest.fn().mockResolvedValue({ ok: true }) }));
 
+const mockWithRequestDatabase = jest.fn((work: () => Promise<unknown>) => work());
+jest.mock('@/shared/db/request', () => ({
+  withRequestDatabase: (work: () => Promise<unknown>) => mockWithRequestDatabase(work),
+}));
+
 import { requireMailArchiveImportAccess } from '@/features/mail/server/archive-import-service';
 import { storeMailContent } from '@/features/mail/server/content';
 
@@ -33,7 +38,11 @@ describe('POST /api/mail/migration/archive/chunk', () => {
     const response = await POST(request);
 
     expect(response.status).toBe(201);
+    expect(mockWithRequestDatabase).toHaveBeenCalledTimes(1);
     expect(requireMailArchiveImportAccess).toHaveBeenCalledWith('mkety-ops');
+    expect(mockWithRequestDatabase.mock.invocationCallOrder[0]).toBeLessThan(
+      jest.mocked(requireMailArchiveImportAccess).mock.invocationCallOrder[0],
+    );
     expect(storeMailContent).toHaveBeenCalledWith(
       'mail/archive-staging/tenant-1/12345678-1234-1234-1234-123456789012/0/0',
       expect.any(Uint8Array),
@@ -54,6 +63,7 @@ describe('POST /api/mail/migration/archive/chunk', () => {
     const response = await POST(request);
 
     expect(response.status).toBe(403);
+    expect(mockWithRequestDatabase).not.toHaveBeenCalled();
     expect(requireMailArchiveImportAccess).not.toHaveBeenCalled();
     expect(storeMailContent).not.toHaveBeenCalled();
   });

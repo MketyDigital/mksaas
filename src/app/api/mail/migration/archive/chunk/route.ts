@@ -8,6 +8,7 @@ import {
   requireMailArchiveImportAccess,
 } from '@/features/mail/server/archive-import-service';
 import { storeMailContent } from '@/features/mail/server/content';
+import { withRequestDatabase } from '@/shared/db/request';
 
 export async function POST(request: Request) {
   let stage = 'validate_request';
@@ -35,7 +36,7 @@ export async function POST(request: Request) {
     if (contentLength > MAX_ARCHIVE_CHUNK_BYTES) return NextResponse.json({ error: 'size' }, { status: 413 });
 
     stage = 'authorize_import';
-    const access = await requireMailArchiveImportAccess(tenantSlug);
+    const access = await withRequestDatabase(() => requireMailArchiveImportAccess(tenantSlug));
     stage = 'read_chunk_body';
     const reader = request.body?.getReader();
     if (!reader) return NextResponse.json({ error: 'size' }, { status: 400 });

@@ -6,6 +6,7 @@ import {
   requireMailArchiveImportAccess,
 } from '@/features/mail/server/archive-import-service';
 import { deleteMailContent } from '@/features/mail/server/content';
+import { withRequestDatabase } from '@/shared/db/request';
 
 export async function POST(request: Request) {
   const url = new URL(request.url);
@@ -13,7 +14,7 @@ export async function POST(request: Request) {
   if (!/^[a-z0-9-]{2,63}$/.test(tenantSlug) || request.headers.get('origin') !== url.origin) {
     return NextResponse.json({ ok: false }, { status: 403 });
   }
-  const access = await requireMailArchiveImportAccess(tenantSlug);
+  const access = await withRequestDatabase(() => requireMailArchiveImportAccess(tenantSlug));
   const body = (await request.json().catch(() => null)) as {
     uploadId?: string;
     files?: Array<{ chunks?: number }>;

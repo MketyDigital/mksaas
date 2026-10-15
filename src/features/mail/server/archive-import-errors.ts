@@ -30,5 +30,11 @@ const SAFE_STORAGE_ERROR_CODES = new Map([
 export function safeArchiveMessageErrorCode(error: unknown): string {
   if (!(error instanceof Error)) return 'archive_message_import_failed';
   if (SAFE_ARCHIVE_MESSAGE_ERROR_CODES.has(error.message)) return error.message;
+  if (error.message === 'Mkety Mail content storage rejected the migration object.') {
+    const status = (error as Error & { status?: unknown }).status;
+    if (typeof status === 'number' && Number.isInteger(status) && status >= 400 && status <= 599) {
+      return `mail_content_storage_http_${status}`;
+    }
+  }
   return SAFE_STORAGE_ERROR_CODES.get(error.message) ?? 'archive_message_import_failed';
 }

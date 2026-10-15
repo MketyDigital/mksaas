@@ -3,7 +3,9 @@ import { safeArchiveMessageErrorCode } from './archive-import-errors';
 describe('safeArchiveMessageErrorCode', () => {
   it('preserves safe parser codes', () => {
     expect(safeArchiveMessageErrorCode(new Error('source_message_invalid_mime'))).toBe('source_message_invalid_mime');
-    expect(safeArchiveMessageErrorCode(new Error('source_message_missing_sender'))).toBe('source_message_missing_sender');
+    expect(safeArchiveMessageErrorCode(new Error('source_message_missing_sender'))).toBe(
+      'source_message_missing_sender',
+    );
   });
 
   it('classifies missing and rejected Mail content storage without exposing raw errors', () => {
@@ -13,6 +15,11 @@ describe('safeArchiveMessageErrorCode', () => {
     expect(safeArchiveMessageErrorCode(new Error('Mkety Mail content storage rejected the migration object.'))).toBe(
       'mail_content_storage_rejected',
     );
+    expect(
+      safeArchiveMessageErrorCode(
+        Object.assign(new Error('Mkety Mail content storage rejected the migration object.'), { status: 401 }),
+      ),
+    ).toBe('mail_content_storage_http_401');
   });
 
   it('never persists arbitrary database, provider, or personal error text', () => {
