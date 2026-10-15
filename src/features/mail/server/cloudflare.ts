@@ -80,16 +80,16 @@ export async function ensureCloudflareEmailSendingDns(
       throw new Error('mail_sending_dns_conflict');
     }
     const sameType=atName.filter((record)=>String(record.type||'').toUpperCase()===expected.type);
-    const match=sameType.some((record)=>String(record.content||'').replaceAll('"','').trim().toLowerCase()===expected.content.replaceAll('"','').trim().toLowerCase()&&
+    const normalizedExpected=expected.content.replaceAll('"','').trim().toLowerCase();
+    const relevantRecords=expected.type==='TXT'&&normalizedExpected.startsWith('v=spf1')
+      ?sameType.filter((record)=>String(record.content||'').replaceAll('"','').trim().toLowerCase().startsWith('v=spf1'))
+      :expected.type==='TXT'&&normalizedExpected.startsWith('v=dkim1')
+        ?sameType.filter((record)=>String(record.content||'').replaceAll('"','').trim().toLowerCase().startsWith('v=dkim1'))
+        :sameType;
+    const match=relevantRecords.some((record)=>String(record.content||'').replaceAll('"','').trim().toLowerCase()===normalizedExpected&&
       (expected.type!=='MX'||Number(record.priority)===Number(expected.priority)));
     if(match) continue;
-    if(sameType.length>0) throw new Error('mail_sending_dns_conflict');
-
-    // A second SPF policy at the same bounce hostname is invalid; never create one.
-    if(expected.type==='TXT'&&expected.content.toLowerCase().startsWith('v=spf1')&&
-      atName.some((record)=>String(record.type||'').toUpperCase()==='TXT'&&String(record.content||'').replaceAll('"','').trim().toLowerCase().startsWith('v=spf1'))){
-      throw new Error('mail_sending_dns_conflict');
-    }
+    if(relevantRecords.length>0) throw new Error('mail_sending_dns_conflict');
     await cfFetch(`/zones/${encodeURIComponent(zoneId)}/dns_records`,{
       method:'POST',
       body:JSON.stringify({type:expected.type,name:expected.name,content:expected.content,ttl:1,...(expected.type==='MX'?{priority:expected.priority??10}:{})}),

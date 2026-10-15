@@ -106,6 +106,23 @@ describe('Cloudflare Email Sending DNS provisioning', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
+  it('preserves unrelated TXT records at the bounce name while adding its SPF policy', async () => {
+    const expected = [{ type: 'TXT', name: 'cf-bounce.mkety.com', content: 'v=spf1 include:_spf.mx.cloudflare.net ~all' }];
+    const calls: Array<{ init?: RequestInit }> = [];
+    global.fetch = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ init });
+      return {
+        ok: true,
+        json: async () => ({ success: true, result: [{ type: 'TXT', name: 'cf-bounce.mkety.com', content: 'provider-verification=abc' }] }),
+      } as unknown as Response;
+    }) as typeof fetch;
+
+    await ensureCloudflareEmailSendingDns('zone-id', 'mkety.com', expected);
+
+    expect(calls).toHaveLength(2);
+    expect(calls[1].init?.method).toBe('POST');
+  });
+
   it('rejects provider records outside the requested domain', async () => {
     global.fetch = jest.fn() as typeof fetch;
 
