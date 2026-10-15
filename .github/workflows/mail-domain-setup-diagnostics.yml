@@ -1,0 +1,67 @@
+name: Mail domain setup diagnostics (read only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tail:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Validate Cloudflare access without printing credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || { echo 'Missing repository Cloudflare API token.'; exit 1; }
+          [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ] || { echo 'Missing repository Cloudflare account ID.'; exit 1; }
+          echo 'Cloudflare credentials are present; values are masked.'
+
+      - name: Tail only safe Mail domain setup failures
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout --signal=INT 150s npx --yes wrangler@4.129.0 tail mkety-app-host --format=json --search='[mail-domain-setup]' |
+            node --input-type=module -e '
+              import { createInterface } from "node:readline";
+              const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
+              const prefix = "[mail-domain-setup] provisioning failed";
+              const safeKeys = ["domain", "stage", "errorName", "httpStatus", "providerCode", "safeErrorCode"];
+              function visit(value, output) {
+                if (!value || typeof value !== "object") return;
+                if (Array.isArray(value)) { for (const item of value) visit(item, output); return; }
+                for (const key of safeKeys) {
+                  if (!(key in output) && key in value) {
+                    const item = value[key];
+                    if (key === "domain" && typeof item === "string" && /^[a-z0-9.-]+$/.test(item)) output[key] = item;
+                    if (key === "stage" && typeof item === "string" && /^[a-z0-9_]+$/.test(item)) output[key] = item;
+                    if (key === "errorName" && typeof item === "string" && /^[A-Za-z0-9_]+$/.test(item)) output[key] = item;
+                    if ((key === "httpStatus" || key === "providerCode") && Number.isInteger(item)) output[key] = item;
+                    if (key === "safeErrorCode" && typeof item === "string" && /^mail_[a-z0-9_]+$/.test(item)) output[key] = item;
+                  }
+                }
+                for (const item of Object.values(value)) visit(item, output);
+              }
+              rl.on("line", line => {
+                let record;
+                try { record = JSON.parse(line); } catch { return; }
+                const logs = Array.isArray(record.logs) ? record.logs : [];
+                const matched = logs.some(log => {
+                  const values = Array.isArray(log.message) ? log.message : [log.message];
+                  return values.some(value => typeof value === "string" && value.includes(prefix));
+                });
+                if (!matched) return;
+                const output = { event: "mail_domain_setup_failure" };
+                visit(logs, output);
+                process.stdout.write(JSON.stringify(output) + "\\n");
+              });
+            ' || {
+              status=$?
+              [ "$status" -eq 124 ] || [ "$status" -eq 130 ] || { echo 'Cloudflare Worker tail or safe log filter failed.'; exit "$status"; }
+            }
+          echo 'Diagnostic tail ended normally.'
