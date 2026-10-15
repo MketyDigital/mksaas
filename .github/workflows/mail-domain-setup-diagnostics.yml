@@ -26,7 +26,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          set +e
           timeout --signal=INT 150s npx --yes wrangler@4.129.0 tail mkety-app-host --format=json --search='[mail-domain-setup]' |
             node --input-type=module -e '
               import { createInterface } from "node:readline";
@@ -61,13 +60,8 @@ jobs:
                 visit(logs, output);
                 process.stdout.write(JSON.stringify(output) + "\\n");
               });
-            '
-          statuses=(${PIPESTATUS[@]})
-          set -e
-          tail_status=${statuses[0]:-1}
-          parser_status=${statuses[1]:-1}
-          [ "$parser_status" -eq 0 ] || { echo 'Safe log filter failed.'; exit "$parser_status"; }
-          case "$tail_status" in
-            0|124|130) echo 'Diagnostic tail ended normally.' ;;
-            *) echo 'Cloudflare Worker tail failed.'; exit "$tail_status" ;;
-          esac
+            ' || {
+              status=$?
+              [ "$status" -eq 124 ] || [ "$status" -eq 130 ] || { echo 'Cloudflare Worker tail or safe log filter failed.'; exit "$status"; }
+            }
+          echo 'Diagnostic tail ended normally.'
