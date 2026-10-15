@@ -17,11 +17,84 @@ async function cfFetch(path:string,init:RequestInit={}){
   });
   const payload=await response.json().catch(()=>null) as {
     success?:boolean;
-    errors?:Array<{message?:string}>;
+    errors?:Array<{message?:string;code?:number}>;
     result?:unknown;
   }|null;
-  if(!response.ok||payload?.success===false) throw new Error(String(payload?.errors?.[0]?.message||'Cloudflare request failed.'));
+  if(!response.ok||payload?.success===false){
+    const error=new Error('Cloudflare API request failed.') as Error&{httpStatus?:number;providerCode?:number};
+    error.name='CloudflareApiError';
+    error.httpStatus=response.status;
+    const providerCode=payload?.errors?.[0]?.code;
+    if(typeof providerCode==='number') error.providerCode=providerCode;
+    throw error;
+  }
   return payload;
+}
+
+type CloudflareDnsRecord={
+  id?:string;
+  type?:string;
+  name?:string;
+  content?:string;
+  priority?:number;
+};
+
+function normalizedDnsName(value:string,domain:string){
+  const normalized=value.trim().toLowerCase().replace(/\.$/,'');
+  return normalized==='@'?domain:normalized;
+}
+
+/** Adds only Cloudflare Email Sending bounce/SPF/DKIM records; never touches apex MX or DMARC. */
+export async function ensureCloudflareEmailSendingDns(
+  zoneId:string,
+  domain:string,
+  expectedRecords:Array<{type?:string;name?:string;content?:string;priority?:number}>,
+){
+  const normalizedDomain=domain.trim().toLowerCase().replace(/\.$/,'');
+  const ownedRecords=expectedRecords.flatMap((record)=>{
+    const type=String(record.type||'').toUpperCase();
+    const name=normalizedDnsName(String(record.name||''),normalizedDomain);
+    const content=String(record.content||'').trim();
+    if(!['MX','TXT','CNAME'].includes(type)||!name||!content) return [];
+    if(name===normalizedDomain) return [];
+    const hasSendingMarker=name.includes('cf-bounce')||name.includes('._domainkey.');
+    if(hasSendingMarker&&!name.endsWith(`.${normalizedDomain}`)) throw new Error('mail_sending_dns_out_of_scope');
+    if(!name.endsWith(`.${normalizedDomain}`)) return [];
+    const bounceName=`cf-bounce.${normalizedDomain}`;
+    const isBounceMx=type==='MX'&&name===bounceName;
+    const isBounceSpf=type==='TXT'&&name===bounceName&&content.toLowerCase().startsWith('v=spf1');
+    const isBounceDkim=(type==='TXT'||type==='CNAME')&&name===`cf-bounce._domainkey.${normalizedDomain}`&&
+      (type==='CNAME'||content.toLowerCase().startsWith('v=dkim1'));
+    if(isBounceMx||isBounceSpf||isBounceDkim) return [{type,name,content,priority:record.priority}];
+    // Treat an unexpected, out-of-scope sender record as a provider contract error.
+    if(hasSendingMarker) throw new Error('mail_sending_dns_out_of_scope');
+    return [];
+  });
+
+  for(const expected of ownedRecords){
+    const payload=await cfFetch(`/zones/${encodeURIComponent(zoneId)}/dns_records?name=${encodeURIComponent(expected.name)}&per_page=100`);
+    const existing=Array.isArray(payload?.result)?payload.result as CloudflareDnsRecord[]:[];
+    const atName=existing.filter((record)=>normalizedDnsName(String(record.name||''),normalizedDomain)===expected.name);
+    if(atName.some((record)=>String(record.type||'').toUpperCase()==='CNAME'&&expected.type!=='CNAME')||
+      (expected.type==='CNAME'&&atName.some((record)=>String(record.type||'').toUpperCase()!=='CNAME'))){
+      throw new Error('mail_sending_dns_conflict');
+    }
+    const sameType=atName.filter((record)=>String(record.type||'').toUpperCase()===expected.type);
+    const match=sameType.some((record)=>String(record.content||'').replaceAll('"','').trim().toLowerCase()===expected.content.replaceAll('"','').trim().toLowerCase()&&
+      (expected.type!=='MX'||Number(record.priority)===Number(expected.priority)));
+    if(match) continue;
+    if(sameType.length>0) throw new Error('mail_sending_dns_conflict');
+
+    // A second SPF policy at the same bounce hostname is invalid; never create one.
+    if(expected.type==='TXT'&&expected.content.toLowerCase().startsWith('v=spf1')&&
+      atName.some((record)=>String(record.type||'').toUpperCase()==='TXT'&&String(record.content||'').replaceAll('"','').trim().toLowerCase().startsWith('v=spf1'))){
+      throw new Error('mail_sending_dns_conflict');
+    }
+    await cfFetch(`/zones/${encodeURIComponent(zoneId)}/dns_records`,{
+      method:'POST',
+      body:JSON.stringify({type:expected.type,name:expected.name,content:expected.content,ttl:1,...(expected.type==='MX'?{priority:expected.priority??10}:{})}),
+    });
+  }
 }
 
 export async function findCloudflareZone(domain:string){
@@ -163,7 +236,7 @@ type CloudflareSendingDnsRecord={type?:string;name?:string;content?:string};
 export async function getCloudflareEmailSendingDns(zoneId:string,subdomainId:string){
   if(!subdomainId) return [];
   const payload=await cfFetch(`/zones/${encodeURIComponent(zoneId)}/email/sending/subdomains/${encodeURIComponent(subdomainId)}/dns`);
-  return Array.isArray(payload?.result)?payload.result as CloudflareSendingDnsRecord[]:[];
+  return Array.isArray(payload?.result)?payload.result as Array<CloudflareSendingDnsRecord&{priority?:number}>:[];
 }
 
 export async function getPublicCloudflareSendingDns(records:CloudflareSendingDnsRecord[],domain?:string){

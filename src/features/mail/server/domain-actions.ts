@@ -9,6 +9,7 @@ import { mailDomains, mailWorkspaces } from '@/shared/db/schema';
 import {
   enableCloudflareEmailRouting,
   enableCloudflareEmailSending,
+  ensureCloudflareEmailSendingDns,
   ensureCloudflareEmailEventSubscription,
   findCloudflareZone,
   getCloudflareEmailRouting,
@@ -108,6 +109,7 @@ const cloudflareDomainSetup={
   getSending:getCloudflareEmailSending,
   enableSending:enableCloudflareEmailSending,
   getSendingDns:getCloudflareEmailSendingDns,
+  ensureSendingDns:ensureCloudflareEmailSendingDns,
   getPublicSendingDns:getPublicCloudflareSendingDns,
   ensureEventSubscription:ensureCloudflareEmailEventSubscription,
   verifyAuthRecords:areCloudflareEmailAuthRecordsPublished,
