@@ -1,8 +1,10 @@
 const API='https://api.cloudflare.com/client/v4';
 
 function env(){
-  const token=process.env.MKETY_DEPLOY_CLOUDFLARE_API_TOKEN||process.env.CLOUDFLARE_API_TOKEN||'';
-  const accountId=process.env.MKETY_DEPLOY_CLOUDFLARE_ACCOUNT_ID||process.env.CLOUDFLARE_ACCOUNT_ID||'';
+  // Mail's app-host runtime has a dedicated, zone-scoped credential. Never
+  // fall back to the broader deploy token used by release automation.
+  const token=process.env.MKETY_MAIL_CLOUDFLARE_API_TOKEN||'';
+  const accountId=process.env.MKETY_MAIL_CLOUDFLARE_ACCOUNT_ID||process.env.CLOUDFLARE_ACCOUNT_ID||'';
   return {token,accountId};
 }
 

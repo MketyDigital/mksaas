@@ -256,6 +256,8 @@ The repository `CLOUDFLARE_API_TOKEN` used by the Mkety Mail production workflow
 
 The production workflow fails before application deployment if R2/Queues/Event Subscription permissions are absent. Never broaden the token to unrelated Cloudflare accounts.
 
+Authenticated Mail domain setup and guarded first-party cutover run on the separate `mkety-app-host` Worker and use Cloudflare's v4 API. The Mail release attaches the existing GitHub Actions secret `CLOUDFLARE_API_TOKEN` only to that Worker under the runtime binding name `MKETY_MAIL_CLOUDFLARE_API_TOKEN`; it is not a different API credential or provider. The application does not fall back to deployment-token environment variables. This reuses the repository token's full permissions in the app-host runtime, so the token must be limited to the Mkety Cloudflare account and `mkety.com` zone wherever its permissions allow. The API operations require zone lookup, DNS record read/write for the saved rollback snapshot, Email Routing settings and rule management, Email Sending management, and account Queue read/write for Email Sending event subscriptions. Never paste the token into chat or application forms.
+
 ## Production readiness checklist
 
 - [ ] migration baseline green

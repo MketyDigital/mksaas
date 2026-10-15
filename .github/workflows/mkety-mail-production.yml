@@ -442,6 +442,9 @@ jobs:
           SEND_QUEUE_ID: ${{ steps.infra.outputs.send_queue_id }}
           EVENT_QUEUE_ID: ${{ steps.infra.outputs.event_queue_id }}
           MIGRATION_QUEUE_ID: ${{ steps.infra.outputs.migration_queue_id }}
+          # Reuse the repository's existing Cloudflare API token for Mail's
+          # authenticated app-host operations; this is the same Cloudflare v4 API.
+          MKETY_MAIL_CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           MKETY_FIRST_PARTY_MAIL_TENANT_ID: ${{ needs.production-db.outputs.first_party_mail_tenant_id }}
         run: |
           set -euo pipefail
@@ -487,6 +490,13 @@ jobs:
           # internal content-store credentials to persist imported message bodies.
           put "$APP_HOST_WORKER_NAME" MKETY_MAIL_INTERNAL_SECRET "$internal_secret"
           put "$APP_HOST_WORKER_NAME" MKETY_MAIL_CONTENT_URL 'https://mail-content.mkety.com'
+          put "$APP_HOST_WORKER_NAME" MKETY_MAIL_CLOUDFLARE_ACCOUNT_ID "$CLOUDFLARE_ACCOUNT_ID"
+          if [ -n "${MKETY_MAIL_CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "::add-mask::$MKETY_MAIL_CLOUDFLARE_API_TOKEN"
+            put "$APP_HOST_WORKER_NAME" MKETY_MAIL_CLOUDFLARE_API_TOKEN "$MKETY_MAIL_CLOUDFLARE_API_TOKEN"
+          else
+            echo '::warning::No GitHub-managed Mail Cloudflare token was supplied; any existing dedicated app-host token is left unchanged.'
+          fi
           # External IMAP/SMTP remains fail-closed until the dedicated TCP gateway
           # passes TLS, app-password, mailbox and send acceptance.
           put "$PRODUCTION_WORKER_NAME" MKETY_MAIL_EXTERNAL_CLIENTS_ENABLED 'false'
@@ -519,12 +529,16 @@ jobs:
           const start=raw.indexOf('[');
           const rows=start>=0?JSON.parse(raw.slice(start)):[];
           const names=new Set(rows.map((row)=>row.name));
-          const required=['MKETY_FIRST_PARTY_MAIL_TENANT_ID','MKETY_MAIL_INTERNAL_SECRET','MKETY_MAIL_CONTENT_URL'];
+          const required=['MKETY_FIRST_PARTY_MAIL_TENANT_ID','MKETY_MAIL_INTERNAL_SECRET','MKETY_MAIL_CONTENT_URL','MKETY_MAIL_CLOUDFLARE_ACCOUNT_ID'];
           const missing=required.filter((name)=>!names.has(name));
           if(missing.length) {
             throw new Error('Missing required Mail runtime bindings on app-host Worker: '+missing.join(', '));
           }
           console.log('First-party tenant and Mail storage bindings verified on authenticated app-host Worker.');
+          const mailTokenConfigured=names.has('MKETY_MAIL_CLOUDFLARE_API_TOKEN');
+          if(process.env.MKETY_MAIL_CLOUDFLARE_API_TOKEN&&!mailTokenConfigured) throw new Error('Dedicated Mail Cloudflare token was not attached to app-host.');
+          if(mailTokenConfigured) console.log('Dedicated Mail Cloudflare runtime token verified on authenticated app-host Worker.');
+          else console.log('::warning::Dedicated Mail Cloudflare runtime token is missing; domain provisioning and guarded cutover remain unavailable.');
           NODE
 
           # Exercise the authenticated content Worker and its R2 binding with a
