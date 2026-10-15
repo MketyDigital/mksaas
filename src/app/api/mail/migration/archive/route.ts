@@ -1,4 +1,5 @@
 import { requireMailArchiveImportAccess } from '@/features/mail/server/archive-import-service';
+import { withRequestDatabase } from '@/shared/db/request';
 
 function redirectToMigration(request: Request, tenantSlug: string, query: string) {
   const destination = new URL(`/app/${encodeURIComponent(tenantSlug)}/mail/migration?${query}`, request.url);
@@ -13,6 +14,8 @@ export async function POST(request: Request) {
   const origin = request.headers.get('origin');
   if (origin !== requestUrl.origin) return new Response('Cross-origin upload rejected.', { status: 403 });
 
-  await requireMailArchiveImportAccess(tenantSlug);
-  return redirectToMigration(request, tenantSlug, 'error=upload-version');
+  return withRequestDatabase(async () => {
+    await requireMailArchiveImportAccess(tenantSlug);
+    return redirectToMigration(request, tenantSlug, 'error=upload-version');
+  });
 }

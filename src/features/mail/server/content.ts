@@ -76,7 +76,11 @@ export async function storeMailContent(
     body,
     cache:'no-store',
   });
-  if(!response.ok) throw new Error('Mkety Mail content storage rejected the migration object.');
+  if(!response.ok) {
+    throw Object.assign(new Error('Mkety Mail content storage rejected the migration object.'), {
+      status: response.status,
+    });
+  }
   return response.json().catch(()=>({ok:true,key}));
 }
 

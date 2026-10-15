@@ -13,6 +13,11 @@ jest.mock('@/features/mail/server/archive-import-service', () => ({
   SAFE_ARCHIVE_ERRORS: ['files', 'type', 'size', 'mailbox', 'workspace'],
 }));
 
+const mockWithRequestDatabase = jest.fn((work: () => Promise<unknown>) => work());
+jest.mock('@/shared/db/request', () => ({
+  withRequestDatabase: (work: () => Promise<unknown>) => mockWithRequestDatabase(work),
+}));
+
 import {
   completeMailArchiveUpload,
   MailArchiveImportError,
@@ -38,7 +43,11 @@ describe('POST /api/mail/migration/archive/complete', () => {
     const response = await POST(request);
 
     expect(response.status).toBe(200);
+    expect(mockWithRequestDatabase).toHaveBeenCalledTimes(1);
     expect(requireMailArchiveImportAccess).toHaveBeenCalledWith('mkety-ops');
+    expect(mockWithRequestDatabase.mock.invocationCallOrder[0]).toBeLessThan(
+      jest.mocked(requireMailArchiveImportAccess).mock.invocationCallOrder[0],
+    );
     expect(completeMailArchiveUpload).toHaveBeenCalledWith(
       'mkety-ops',
       {
@@ -61,6 +70,7 @@ describe('POST /api/mail/migration/archive/complete', () => {
     const response = await POST(request);
 
     expect(response.status).toBe(403);
+    expect(mockWithRequestDatabase).not.toHaveBeenCalled();
     expect(requireMailArchiveImportAccess).not.toHaveBeenCalled();
     expect(completeMailArchiveUpload).not.toHaveBeenCalled();
   });
