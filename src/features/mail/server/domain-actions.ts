@@ -9,8 +9,8 @@ import { mailDomains, mailWorkspaces } from '@/shared/db/schema';
 import {
   enableCloudflareEmailRouting,
   enableCloudflareEmailSending,
-  ensureCloudflareEmailSendingDns,
   ensureCloudflareEmailEventSubscription,
+  ensureCloudflareEmailSendingDns,
   findCloudflareZone,
   getCloudflareEmailRouting,
   getCloudflareEmailSending,
