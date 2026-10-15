@@ -28,6 +28,12 @@ const NATURAL_CONVERSATION_POLICY = [
   "When information is missing or sources conflict, say so plainly and ask only the focused follow-up needed to help. Keep the reply proportionate to the request and follow the business's policies and boundaries.",
 ].join("\n");
 
+const HUMAN_ATTRIBUTION_POLICY = [
+  "HUMAN TEAM ATTRIBUTION",
+  "Human team member replies are authored by the business. Do not treat them as customer statements or attribute them to yourself.",
+  "Use what the human team member already told the customer as conversation context, and do not ask the customer to repeat a question the human already answered.",
+].join("\n");
+
 function formatMemory(memory: AssistantContextInput["memory"]): string {
   if (typeof memory === "string") return memory.trim();
   return Object.entries(memory)
@@ -53,7 +59,14 @@ function buildBaseSystem(input: AssistantContextInput): string {
     PLATFORM_SECURITY,
     input.businessInstructions ? `PUBLISHED BUSINESS INSTRUCTIONS (preserved verbatim):\n${input.businessInstructions}` : "",
     NATURAL_CONVERSATION_POLICY,
+    HUMAN_ATTRIBUTION_POLICY,
   ].filter(Boolean).join("\n\n");
+}
+
+export function conversationHistoryTurn(role: unknown, content: unknown): ConversationTurn {
+  const text = String(content ?? "");
+  if (String(role) === "human") return { role: "assistant", content: `Human team member: ${text}` };
+  return { role: String(role) === "assistant" ? "assistant" : "user", content: text };
 }
 
 function buildToolContext(tools: AssistantContextInput["tools"]): string {

@@ -446,7 +446,7 @@ export function renderOperatorPortal(customers: any[]) {
 .card{background:var(--p);border:1px solid var(--l);border-radius:14px;padding:18px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}.metric{font-size:24px;font-weight:800}.muted{color:var(--m)}
 .btn,.input{border:1px solid var(--l);background:#191c27;color:#fff;border-radius:9px;padding:9px 11px}.btn{cursor:pointer}.primary{background:var(--b);border-color:transparent}.danger{color:#ff9aab}
-.table{width:100%;border-collapse:collapse}.table th,.table td{text-align:left;padding:10px;border-bottom:1px solid var(--l);vertical-align:top}.table th{font-size:11px;color:var(--m);text-transform:uppercase}#attemptsBox{max-width:100%;overflow-x:auto}
+.table{width:100%;border-collapse:collapse}.table th,.table td{text-align:left;padding:10px;border-bottom:1px solid var(--l);vertical-align:top}.table th{font-size:11px;color:var(--m);text-transform:uppercase}#attemptsBox,#creditActivityBox{max-width:100%;overflow-x:auto}.activity-filter{min-width:150px;flex:1}
 .field{display:grid;gap:5px;margin:10px 0}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.modal{position:fixed;inset:0;background:#0009;display:none;place-items:center;z-index:20}
 .modal.open{display:grid}.dialog{width:min(760px,94vw);max-height:90vh;overflow:auto;background:var(--p);border:1px solid var(--l);border-radius:14px;padding:20px}
 .pill{display:inline-flex;border:1px solid var(--l);border-radius:99px;padding:3px 8px;font-size:11px}.ok{color:#64d5a4}.warn{color:#ffc66f}
@@ -457,26 +457,41 @@ export function renderOperatorPortal(customers: any[]) {
 <main class="wrap">
   <div class="top"><div><h1 style="margin:0">Mkety Assist Operator</h1><p class="muted">Internal customer, commercial, domain, model and operations control.</p></div><div class="row"><button class="btn primary" id="newCustomer">New customer</button><button class="btn" id="opsLogout">Sign out</button></div></div>
   <div class="grid" id="metrics"></div>
+  <div class="row" style="margin:14px 0"><a class="btn" href="#customerSection">Customers</a><a class="btn" href="#creditActivity">Credits &amp; charges</a><a class="btn" href="#modelsSection">Models &amp; rates</a><a class="btn" href="#providersSection">Providers</a><a class="btn" href="#operationsSection">Operations</a></div>
 
-  <div class="card" style="margin-top:16px">
+  <div class="card" id="customerSection" style="margin-top:16px">
     <div class="top" style="margin:0 0 10px"><h2 style="margin:0">Customers</h2><button class="btn" id="refreshCustomers">Refresh</button></div>
     <table class="table"><thead><tr><th>Customer</th><th>Portal</th><th>Credits</th><th>Status</th><th></th></tr></thead><tbody id="rows"></tbody></table>
   </div>
 
-  <div class="card" style="margin-top:16px">
+  <section class="card" id="creditActivity" style="margin-top:16px">
+    <div class="top" style="margin:0 0 10px"><div><h2 style="margin:0">Credits &amp; charges</h2><p class="muted" style="margin:4px 0 0">Balance movements, payment attempts and settled AI usage, with customer and workload detail.</p></div><button class="btn" id="refreshCreditActivity">Refresh</button></div>
+    <div class="row" style="margin:12px 0">
+      <label class="field activity-filter">Customer<select class="input" id="activityCustomer"><option value="all">All customers</option></select></label>
+      <label class="field activity-filter">Transaction<select class="input" id="activityType"><option value="all">All activity</option><option value="usage">AI usage charges</option><option value="credits">Credit movements</option><option value="payments">Payments / funding</option></select></label>
+      <label class="field activity-filter">From<input class="input" id="activityFrom" type="date"></label>
+      <label class="field activity-filter">To<input class="input" id="activityTo" type="date"></label>
+    </div>
+    <div class="grid" id="creditSummary"></div>
+    <p class="muted">AI usage shows settled customer MKredit charges. Credit holds and returned unused credits are shown separately in the balance ledger. Provider costs are internal estimates, not provider invoices. Pending or failed payments do not grant credits.</p>
+    <div id="creditActivityBox" class="muted">Loading credit activity…</div>
+    <div class="row" style="margin-top:12px"><button class="btn" id="loadOlderActivity" disabled>Load older activity</button><span class="muted" id="activityPageStatus"></span></div>
+  </section>
+
+  <div class="card" id="modelsSection" style="margin-top:16px">
     <div class="top" style="margin:0 0 10px"><h2 style="margin:0">Models & Rates</h2><button class="btn" id="refreshModels">Refresh</button></div><div id="modelsBox" class="muted">Authenticate to load models.</div>
   </div>
 
-  <div class="card" style="margin-top:16px">
+  <div class="card" id="providersSection" style="margin-top:16px">
     <div class="top" style="margin:0 0 10px"><h2 style="margin:0">Providers</h2><div><button class="btn" id="refreshProviders">Refresh</button> <button class="btn primary" id="newProvider">Add</button></div></div><div id="providersBox" class="muted">Authenticate to load providers.</div>
   </div>
 
-  <div class="card" style="margin-top:16px">
+  <div class="card" id="inferenceSection" style="margin-top:16px">
     <div class="top" style="margin:0 0 10px"><h2 style="margin:0">Uncertain inference attempts</h2><div><select class="input" id="attemptCustomer" aria-label="Customer for inference attempts"></select> <button class="btn" id="refreshAttempts">Refresh</button></div></div>
     <p class="muted">Only safe provider, model, usage, and status fields are shown. Repairs never run a new inference request.</p><div id="attemptsBox" class="muted">Authenticate to load attempts.</div>
   </div>
 
-  <div class="card" style="margin-top:16px">
+  <div class="card" id="operationsSection" style="margin-top:16px">
     <div class="top" style="margin:0 0 10px"><h2 style="margin:0">Operations</h2><button class="btn" id="refreshOps">Refresh</button></div>
     <div id="healthBox" class="muted">Authenticate to load health.</div><h3>Recent audit</h3><div id="auditBox" class="muted">—</div>
   </div>
@@ -486,10 +501,16 @@ export function renderOperatorPortal(customers: any[]) {
 const moveRouteTarget = ${moveRouteTarget.toString()};
 let data=${rows};
 let providerData=[];
+let creditActivityItems=[];
+let creditActivityNextOffset=null;
+let creditActivityRequestId=0;
 const byId=id=>document.getElementById(id);
 const modal=byId('modal'),dialog=byId('dialog'),metrics=byId('metrics'),rows=byId('rows'),
   providersBox=byId('providersBox'),modelsBox=byId('modelsBox'),healthBox=byId('healthBox'),auditBox=byId('auditBox'),
   attemptsBox=byId('attemptsBox'),attemptCustomer=byId('attemptCustomer'),refreshAttempts=byId('refreshAttempts'),
+  activityCustomer=byId('activityCustomer'),activityType=byId('activityType'),activityFrom=byId('activityFrom'),activityTo=byId('activityTo'),
+  creditSummary=byId('creditSummary'),creditActivityBox=byId('creditActivityBox'),refreshCreditActivity=byId('refreshCreditActivity'),
+  loadOlderActivity=byId('loadOlderActivity'),activityPageStatus=byId('activityPageStatus'),
   newCustomer=byId('newCustomer'),opsLogout=byId('opsLogout'),refreshCustomers=byId('refreshCustomers'),
   refreshModels=byId('refreshModels'),refreshProviders=byId('refreshProviders'),newProvider=byId('newProvider'),refreshOps=byId('refreshOps');
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
@@ -499,6 +520,7 @@ function openModal(h){dialog.innerHTML=h;modal.classList.add('open')}
 function closeModal(){modal.classList.remove('open');dialog.innerHTML=''}
 modal.onclick=e=>{if(e.target===modal)closeModal()}
 function renderCustomers(){
+  if(activityCustomer){const selected=activityCustomer.value||'all';activityCustomer.innerHTML='<option value="all">All customers</option>'+data.map(c=>'<option value="'+esc(c.id)+'">'+esc(c.name)+' · '+esc(c.slug)+'</option>').join('');activityCustomer.value=data.some(c=>c.id===selected)?selected:'all'}
   metrics.innerHTML=[
     ['Customers',data.length],['Active',data.filter(x=>x.status==='active').length],
     ['Total credits',data.reduce((n,x)=>n+Number(x.balance||0),0)],['Product','Lite / Telegram-first']
@@ -506,7 +528,58 @@ function renderCustomers(){
   rows.innerHTML=data.length?data.map(c=>'<tr><td><strong>'+esc(c.name)+'</strong><div class="muted">'+esc(c.slug)+'</div></td><td>'+esc(c.primary_hostname||'')+'</td><td>'+esc(c.balance??0)+'</td><td>'+esc(c.status)+'</td><td><button class="btn" data-customer="'+c.id+'">Manage</button></td></tr>').join(''):'<tr><td colspan="5" class="muted">No customers.</td></tr>';
   document.querySelectorAll('[data-customer]').forEach(b=>b.onclick=()=>manageCustomer(b.dataset.customer));
 }
-async function loadCustomers(){const x=await api('/api/ops/customers');data=x.customers||[];renderCustomers();await loadAttempts()}
+async function loadCustomers(){const x=await api('/api/ops/customers');data=x.customers||[];renderCustomers();await Promise.all([loadAttempts(),loadCreditActivity(false)])}
+function formatMkredit(value){const n=Number(value||0);return (n<0?'−':'')+Math.abs(n).toLocaleString(undefined,{maximumFractionDigits:4})}
+function activityDescription(item){
+  if(item.record_type==='usage')return 'Settled AI usage charge';
+  if(item.record_type==='payment')return (item.purchase_type==='plan'?'Plan funding':'Top-up')+' · '+String(item.payment_status||'unknown');
+  const labels={inference_reserve:'Temporary credit hold',inference_release:'Credit hold released',inference_settlement_refund:'Unused hold returned',operator_adjustment:'Operator adjustment'};
+  return labels[item.event_type]||String(item.event_type||'Credit movement').replaceAll('_',' ');
+}
+function activityDetails(item){
+  if(item.record_type==='usage'){
+    const workload=item.workload_type==='api_key'?'API key '+(item.workload_id||''):(item.assistant_name||item.assistant_id||'Assistant');
+    const model=[item.model_alias,item.provider,item.provider_model].filter(Boolean).join(' · ');
+    const units=[item.input_units!=null?Number(item.input_units).toLocaleString()+' input':'' ,item.output_units!=null?Number(item.output_units).toLocaleString()+' output':'',item.reasoning_units?Number(item.reasoning_units).toLocaleString()+' reasoning':''].filter(Boolean).join(' / ');
+    const effort=item.requested_reasoning_mode&&item.requested_reasoning_mode!=='standard'?' · requested '+item.requested_reasoning_mode+' / applied '+(item.applied_reasoning_mode||'standard'):'';
+    const cost=Number(item.provider_cost_usd||0)>0?' · provider cost estimate $'+Number(item.provider_cost_usd).toFixed(6):'';
+    return '<div>'+esc(workload)+'</div><div class="muted">'+esc(model||'Model unavailable')+' · '+esc(units||'usage detail unavailable')+esc(effort)+esc(cost)+'</div>';
+  }
+  if(item.record_type==='payment'){
+    const amount=item.payment_amount_usd==null?'amount unavailable':'$'+Number(item.payment_amount_usd).toFixed(2)+' '+(item.payment_currency||'USD');
+    const grant=item.payment_status==='paid'?formatMkredit(item.amount)+' MKredit granted':formatMkredit(item.amount)+(item.payment_status==='pending'?' MKredit if payment completes':' MKredit not granted');
+    return '<div>'+esc(item.payment_provider||'Payment provider')+' · '+esc(amount)+'</div><div class="muted">'+esc(grant)+'</div>';
+  }
+  let reason='';try{const meta=JSON.parse(item.metadata_json||'{}');reason=String(meta.reason||'')}catch{}
+  const workload=item.workload_type==='api_key'?'API key '+(item.workload_id||''):'';
+  return '<div>'+esc(item.assistant_name||item.assistant_id||workload||'Account-level movement')+'</div><div class="muted">'+esc(reason||workload||item.reference_id||'No additional reason recorded')+'</div>';
+}
+function renderCreditActivity(){
+  if(!creditActivityBox)return;
+  const summaries=window.creditActivitySummary||{};
+  creditSummary.innerHTML=[['Customers',summaries.customerCount||0],['Available MKredit',formatMkredit(summaries.balance)],['Granted lifetime',formatMkredit(summaries.lifetimeGranted)],['Consumed lifetime',formatMkredit(summaries.lifetimeConsumed)]].map(([label,value])=>'<div class="card"><div class="muted">'+esc(label)+'</div><div class="metric">'+esc(value)+'</div></div>').join('');
+  creditActivityBox.innerHTML=creditActivityItems.length?'<table class="table"><thead><tr><th>When</th><th>Customer</th><th>Transaction</th><th>For / how</th><th>MKredit</th><th>Balance after</th></tr></thead><tbody>'+creditActivityItems.map(item=>{
+    const amount=item.record_type==='payment'&&item.payment_status!=='paid'?'—':formatMkredit(item.amount);
+    return '<tr><td>'+new Date(Number(item.created_at)*1000).toLocaleString()+'</td><td><strong>'+esc(item.customer_name||item.customer_id)+'</strong><div class="muted">'+esc(item.customer_id)+'</div></td><td>'+esc(activityDescription(item))+'<div class="muted">'+esc(item.reference_id||item.id)+'</div></td><td>'+activityDetails(item)+'</td><td>'+esc(amount)+(item.record_type==='payment'&&item.payment_status!=='paid'?'<div class="muted">No credit applied</div>':'')+'</td><td>'+esc(item.balance_after==null?'—':formatMkredit(item.balance_after))+'</td></tr>';
+  }).join('')+'</tbody></table>':'<div class="card">No matching credit activity.</div>';
+  loadOlderActivity.disabled=creditActivityNextOffset==null;
+  activityPageStatus.textContent=creditActivityItems.length?creditActivityItems.length+' records shown'+(creditActivityNextOffset!=null?' · more available':''):' ';
+}
+async function loadCreditActivity(append=false){
+  const requestId=++creditActivityRequestId;
+  try{
+    const params=new URLSearchParams({customerId:activityCustomer.value||'all',type:activityType.value||'all',limit:'50',offset:String(append?(creditActivityNextOffset||0):0)});
+    const from=activityFrom.value?Math.floor(Date.parse(activityFrom.value+'T00:00:00Z')/1000):null;
+    const to=activityTo.value?Math.floor(Date.parse(activityTo.value+'T00:00:00Z')/1000)+86400:null;
+    if(from!==null)params.set('from',String(from));if(to!==null)params.set('to',String(to));
+    refreshCreditActivity.disabled=true;loadOlderActivity.disabled=true;const result=await api('/api/ops/credit-activity?'+params.toString());
+    if(requestId!==creditActivityRequestId)return;
+    window.creditActivitySummary=result.summary||{};
+    creditActivityItems=append?creditActivityItems.concat(result.activities||[]):(result.activities||[]);
+    creditActivityNextOffset=result.hasMore?result.nextOffset:null;renderCreditActivity();
+  }catch(e){if(requestId===creditActivityRequestId)creditActivityBox.textContent=e.message}
+  finally{if(requestId===creditActivityRequestId){refreshCreditActivity.disabled=false;loadOlderActivity.disabled=creditActivityNextOffset==null}}
+}
 async function loadProviders(){
   try{
     const x=await api('/api/ops/providers');providerData=x.providers||[];
@@ -659,7 +732,9 @@ function editModel(alias,m){
     const first=collected[0],second=collected[1]||null;
     const payload={provider:first.provider,providerConnectionId:first.providerConnectionId,providerModel:first.providerModel,fallbackProvider:second?second.provider:null,fallbackProviderConnectionId:second?second.providerConnectionId:null,fallbackModel:second?second.providerModel:null,targets:collected,byokPolicy:mByokPolicy.value,status:mStatus.value,customerId:mScope.value==='customer'?mCustomer.value:null};
     if(mScope.value==='global')Object.assign(payload,{providerInputCostMicrosPerMillion:first.providerInputCostMicrosPerMillion,providerOutputCostMicrosPerMillion:first.providerOutputCostMicrosPerMillion,providerImageCostMicros:first.providerImageCostMicros,providerAudioCostMicrosPerMinute:first.providerAudioCostMicrosPerMinute,inputCreditsPerMillion:first.inputCreditsPerMillion,outputCreditsPerMillion:first.outputCreditsPerMillion,imageCredits:first.imageCredits,audioCreditsPerMinute:first.audioCreditsPerMinute,requestsPerSecond:mRps.value?Number(mRps.value):null,requestsPerMinute:mRpm.value?Number(mRpm.value):null,tokensPerMinute:mTpm.value?Number(mTpm.value):null,retryBaseSeconds:Number(mRetryBase.value||2),retryMaxSeconds:Number(mRetryMax.value||120)});
-    await api('/api/ops/models/'+encodeURIComponent(alias),{method:'PATCH',body:JSON.stringify(payload)});closeModal();await loadModels()
+    try{await api('/api/ops/models/'+encodeURIComponent(alias),{method:'PATCH',body:JSON.stringify(payload)})}
+    catch(e){if(e.message!=='rate_increase_confirmation_required'||!confirm('This route increases at least one usage rate by more than 10×. This can sharply increase customer credit use. Publish this rate change anyway?'))throw e;payload.confirmLargeRateIncrease=true;await api('/api/ops/models/'+encodeURIComponent(alias),{method:'PATCH',body:JSON.stringify(payload)})}
+    closeModal();await loadModels()
   }catch(e){alert(e.message)}};
 }
 async function loadOps(){
@@ -778,7 +853,7 @@ async function manageCustomer(id){
       '<div class="row" style="margin-top:10px"><button class="btn" id="calcCredits">Recalculate included credits</button></div>'+
       '<h3>Features</h3><div class="two"><label><input id="fTelegram" type="checkbox" '+(f.telegram_enabled?'checked':'')+'> Telegram</label><label><input id="fVision" type="checkbox" '+(f.vision_enabled?'checked':'')+'> Vision</label><label><input id="fVoice" type="checkbox" '+(f.voice_enabled?'checked':'')+'> Voice</label><label><input id="fKnowledge" type="checkbox" '+(f.knowledge_enabled?'checked':'')+'> Knowledge</label><label><input id="fReminders" type="checkbox" '+(f.reminders_enabled?'checked':'')+'> Reminders</label><label><input id="fHandoff" type="checkbox" '+(f.human_handoff_enabled?'checked':'')+'> Human handoff</label><label><input id="fTools" type="checkbox" '+(f.tools_enabled?'checked':'')+'> Tools</label></div>'+
       '<h3>Funding / ledger</h3><div class="two"><div class="field"><label>Credit adjustment (+ add / − remove)</label><input class="input" id="creditDelta" type="number" value="0"><small class="muted">A removal lowers available MKredit and adds the same amount to Used.</small></div><div class="field"><label>Reason</label><input class="input" id="creditReason" placeholder="Goodwill / support adjustment"></div></div>'+
-      '<div class="row"><button class="btn" id="adjustCredits">Apply adjustment</button><button class="btn" id="showLedger">Funding history</button></div>'+
+      '<div class="row"><button class="btn" id="adjustCredits">Apply adjustment</button><button class="btn" id="showLedger">View full credits &amp; charges</button></div>'+
       '<h3>Domains</h3><p class="muted">Customer DNS uses one CNAME. Mkety handles the Cloudflare Custom Hostname, SSL and Worker route.</p><div id="opsDomains">'+domains.map(x=>{let v={};try{v=x.validation_json?JSON.parse(x.validation_json):{}}catch{}return '<div class="card" style="margin-bottom:8px"><div class="spread"><div><strong>'+esc(x.hostname)+'</strong><div class="muted">'+esc(x.kind)+' · '+esc(x.status)+' · SSL '+esc(x.ssl_status||'pending')+(x.is_primary?' · primary':'')+'</div></div>'+(x.kind==='custom'?'<button class="btn" data-refresh-domain="'+esc(x.hostname)+'">Refresh status</button>':'')+'</div>'+(x.kind==='custom'?'<p class="muted">Customer DNS: CNAME <strong>'+esc(x.hostname)+'</strong> → <strong>'+esc(v.cname_target||'mkety-assist.mkety.app')+'</strong><br>Worker route: <code>'+esc(v.worker_route||x.hostname+'/*')+'</code></p>':'')+'</div>'}).join('')+'</div><div class="two"><input class="input" id="newDomain" placeholder="ai.customer.com"><button class="btn" id="addDomain">Configure custom domain</button></div>'+
       '<div class="row" style="margin-top:16px"><button class="btn primary" id="savePolicy">Save amended commercial policy</button><button class="btn" id="closeCustomer">Close</button></div>');
     const closeCustomer=byId('closeCustomer'),calcCredits=byId('calcCredits'),pPrice=byId('pPrice'),pCredits=byId('pCredits'),
@@ -857,6 +932,12 @@ try{
   refreshOps.onclick=loadOps;
   refreshAttempts.onclick=loadAttempts;
   attemptCustomer.onchange=loadAttempts;
+  refreshCreditActivity.onclick=()=>loadCreditActivity(false);
+  loadOlderActivity.onclick=()=>loadCreditActivity(true);
+  activityCustomer.onchange=()=>loadCreditActivity(false);
+  activityType.onchange=()=>loadCreditActivity(false);
+  activityFrom.onchange=()=>loadCreditActivity(false);
+  activityTo.onchange=()=>loadCreditActivity(false);
   opsLogout.onclick=async()=>{await fetch('/api/ops/auth/logout',{method:'POST'});location.reload()};
   renderCustomers();
   boot();
