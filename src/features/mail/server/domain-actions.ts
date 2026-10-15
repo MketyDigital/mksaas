@@ -1,12 +1,11 @@
 'use server';
 
-import { count, eq } from 'drizzle-orm';
+import { and, count, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
 import { db } from '@/shared/db/cloudflare';
 import { mailDomains, mailWorkspaces } from '@/shared/db/schema';
-
 import {
   enableCloudflareEmailRouting,
   enableCloudflareEmailSending,
@@ -17,10 +16,11 @@ import {
   getCloudflareEmailSendingDns,
   getPublicCloudflareSendingDns,
 } from './cloudflare';
+import { resolveTenantMailPlanKey, resolveTenantMailPlanLimits } from './commercial';
 import { areCloudflareEmailAuthRecordsPublished, getMailDomainProvisioningPolicy } from './domain-provisioning-policy';
+import { provisionMailDomain } from './domain-setup';
 import { getFirstPartyMailTenantId } from './runtime-config';
 import { requireMailWorkspaceAccess } from './workspace';
-import { resolveTenantMailPlanKey, resolveTenantMailPlanLimits } from './commercial';
 
 function normalizeDomain(value:string){
   return value.trim().toLowerCase().replace(/^https?:\/\//,'').replace(/\/.*$/,'').replace(/\.$/,'');
@@ -48,54 +48,96 @@ export async function addMailDomain(tenantSlug:string,formData:FormData){
 
   const duplicate=await db.query.mailDomains.findFirst({where:eq(mailDomains.domain,domain)});
   if(duplicate&&duplicate.tenantId!==tenant.id) redirect(`/app/${tenantSlug}/mail/domains?error=claimed`);
-  if(duplicate) redirect(`/app/${tenantSlug}/mail/domains?domain=${encodeURIComponent(domain)}`);
-
-  let zoneId:string|null=null;
-  let routingEnabled=false;
-  let sendingEnabled=false;
-  let sendingAuthVerified=false;
-  try{
-    const zone=await findCloudflareZone(domain);
-    if(zone){
-      zoneId=zone.id;
-      if(provisioning.configureRouting){
-        await enableCloudflareEmailRouting(zone.id,domain);
-        const routing=await getCloudflareEmailRouting(zone.id);
-        routingEnabled=Boolean(routing?.enabled);
-      }
-      if(provisioning.configureSending){
-        const configuredSending=await getCloudflareEmailSending(zone.id,domain);
-        const sending=configuredSending||await enableCloudflareEmailSending(zone.id,domain);
-        sendingEnabled=Boolean(sending?.enabled);
-        if(sendingEnabled&&typeof sending?.tag==='string'){
-          const expectedRecords=await getCloudflareEmailSendingDns(zone.id,sending.tag);
-          const publicRecords=await getPublicCloudflareSendingDns(expectedRecords,domain);
-          sendingAuthVerified=areCloudflareEmailAuthRecordsPublished(domain,sendingEnabled,expectedRecords,publicRecords);
-        }
-        if(sendingEnabled) await ensureCloudflareEmailEventSubscription(zone.id,domain);
-      }
-    }
-  }catch{
-    // A customer domain outside Mkety's Cloudflare account remains in guided setup.
+  const result=await provisionMailDomain(domain,provisioning,cloudflareDomainSetup);
+  if(duplicate){
+    await saveMailDomainSetup(duplicate.id,tenant.id,workspace.id,result);
+    if(result.routingEnabled) await setDefaultMailDomain(workspace.id,duplicate.id);
+    revalidatePath(`/app/${tenantSlug}/mail`);
+    redirect(`/app/${tenantSlug}/mail/domains?domain=${encodeURIComponent(domain)}&setup=${getSetupResult(result,provisioning)}`);
   }
 
   const [created]=await db.insert(mailDomains).values({
     tenantId:tenant.id,
     workspaceId:workspace.id,
     domain,
-    status:routingEnabled&&sendingAuthVerified?'ready':routingEnabled?'routing_ready':sendingAuthVerified?'sending_ready':'pending',
-    cloudflareZoneId:zoneId,
-    routingEnabled,
-    sendingEnabled,
-    mxStatus:routingEnabled?'verified':'pending',
+    status:result.routingEnabled&&result.sendingAuthVerified?'ready':result.routingEnabled?'routing_ready':result.sendingAuthVerified?'sending_ready':'pending',
+    cloudflareZoneId:result.zoneId,
+    routingEnabled:result.routingEnabled,
+    sendingEnabled:result.sendingEnabled,
+    mxStatus:result.routingEnabled?'verified':'pending',
+    spfStatus:result.sendingAuthVerified?'verified':'pending',
+    dkimStatus:result.sendingAuthVerified?'verified':'pending',
+    dmarcStatus:result.sendingAuthVerified?'verified':'pending',
+  }).returning();
+
+  if(result.routingEnabled&&created){
+    await setDefaultMailDomain(workspace.id,created.id);
+  }
+  revalidatePath(`/app/${tenantSlug}/mail`);
+  redirect(`/app/${tenantSlug}/mail/domains?domain=${encodeURIComponent(domain)}&setup=${getSetupResult(result,provisioning)}`);
+}
+
+export async function retryMailDomainSetup(tenantSlug:string,domainId:string){
+  const {tenant}=await requireMailWorkspaceAccess(tenantSlug);
+  const workspace=await db.query.mailWorkspaces.findFirst({where:eq(mailWorkspaces.tenantId,tenant.id)});
+  if(!workspace) redirect(`/app/${tenantSlug}/mail`);
+  const domain=await db.query.mailDomains.findFirst({where:and(
+    eq(mailDomains.id,domainId),
+    eq(mailDomains.tenantId,tenant.id),
+    eq(mailDomains.workspaceId,workspace.id),
+  )});
+  if(!domain) redirect(`/app/${tenantSlug}/mail/domains?error=domain`);
+  const policy=getMailDomainProvisioningPolicy(domain.domain,tenant.id===getFirstPartyMailTenantId().trim()&&tenant.slug==='mkety-ops');
+  if(!policy.allowed) redirect(`/app/${tenantSlug}/mail/domains?error=reserved-domain`);
+  const result=await provisionMailDomain(domain.domain,policy,cloudflareDomainSetup,{
+    zoneId:domain.cloudflareZoneId,
+    routingEnabled:domain.routingEnabled,
+    sendingEnabled:domain.sendingEnabled,
+    sendingAuthVerified:domain.spfStatus==='verified'&&domain.dkimStatus==='verified'&&domain.dmarcStatus==='verified',
+  });
+  await saveMailDomainSetup(domain.id,tenant.id,workspace.id,result);
+  if(result.routingEnabled) await setDefaultMailDomain(workspace.id,domain.id);
+  revalidatePath(`/app/${tenantSlug}/mail`);
+  redirect(`/app/${tenantSlug}/mail/domains?domain=${encodeURIComponent(domain.domain)}&setup=${getSetupResult(result,policy)}`);
+}
+
+const cloudflareDomainSetup={
+  findZone:findCloudflareZone,
+  getRouting:getCloudflareEmailRouting,
+  enableRouting:enableCloudflareEmailRouting,
+  getSending:getCloudflareEmailSending,
+  enableSending:enableCloudflareEmailSending,
+  getSendingDns:getCloudflareEmailSendingDns,
+  getPublicSendingDns:getPublicCloudflareSendingDns,
+  ensureEventSubscription:ensureCloudflareEmailEventSubscription,
+  verifyAuthRecords:areCloudflareEmailAuthRecordsPublished,
+};
+
+function getSetupResult(result:Awaited<ReturnType<typeof provisionMailDomain>>,policy:ReturnType<typeof getMailDomainProvisioningPolicy>){
+  if(result.failed) return 'error';
+  if(!result.zoneId) return 'guided';
+  return result.sendingAuthVerified&&(!policy.configureRouting||result.routingEnabled)?'ready':'waiting';
+}
+
+async function saveMailDomainSetup(
+  domainId:string,
+  tenantId:string,
+  workspaceId:string,
+  result:Awaited<ReturnType<typeof provisionMailDomain>>,
+){
+  const sendingAuthVerified=result.sendingAuthVerified;
+  await db.update(mailDomains).set({
+    status:result.routingEnabled&&sendingAuthVerified?'ready':result.routingEnabled?'routing_ready':sendingAuthVerified?'sending_ready':'pending',
+    cloudflareZoneId:result.zoneId,
+    routingEnabled:result.routingEnabled,
+    sendingEnabled:result.sendingEnabled,
+    mxStatus:result.routingEnabled?'verified':'pending',
     spfStatus:sendingAuthVerified?'verified':'pending',
     dkimStatus:sendingAuthVerified?'verified':'pending',
     dmarcStatus:sendingAuthVerified?'verified':'pending',
-  }).returning();
+  }).where(and(eq(mailDomains.id,domainId),eq(mailDomains.tenantId,tenantId),eq(mailDomains.workspaceId,workspaceId)));
+}
 
-  if(routingEnabled&&created){
-    await db.update(mailWorkspaces).set({defaultDomainId:created.id,onboardingStep:'mailbox',updatedAt:new Date()}).where(eq(mailWorkspaces.id,workspace.id));
-  }
-  revalidatePath(`/app/${tenantSlug}/mail`);
-  redirect(`/app/${tenantSlug}/mail/domains?domain=${encodeURIComponent(domain)}`);
+async function setDefaultMailDomain(workspaceId:string,domainId:string){
+  await db.update(mailWorkspaces).set({defaultDomainId:domainId,onboardingStep:'mailbox',updatedAt:new Date()}).where(eq(mailWorkspaces.id,workspaceId));
 }
