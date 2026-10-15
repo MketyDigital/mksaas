@@ -25,6 +25,7 @@ for (const [index, query] of buildCreditAuditQueries(validated.customerId, valid
   });
   const parsed = parseWranglerJson(output);
   const result = parsed[0]?.results || parsed[0]?.result || [];
+  if (index === 0 && result.length !== 1) throw new Error("Starpips customer was not resolved uniquely; audit stopped");
   results.push({ name: `query_${String(index + 1).padStart(2, "0")}`, rows: result });
 }
 
