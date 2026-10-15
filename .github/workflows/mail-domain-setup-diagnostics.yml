@@ -26,7 +26,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          timeout --signal=INT 150s npx --yes wrangler@4.129.0 tail mkety-app-host --format=json --search='[mail-domain-setup]' |
+          timeout --signal=INT --kill-after=5s 150s npx --yes wrangler@4.129.0 tail mkety-app-host --format=json |
             node --input-type=module -e '
               import { createInterface } from "node:readline";
               const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
@@ -50,14 +50,9 @@ jobs:
               rl.on("line", line => {
                 let record;
                 try { record = JSON.parse(line); } catch { return; }
-                const logs = Array.isArray(record.logs) ? record.logs : [];
-                const matched = logs.some(log => {
-                  const values = Array.isArray(log.message) ? log.message : [log.message];
-                  return values.some(value => typeof value === "string" && value.includes(prefix));
-                });
-                if (!matched) return;
+                if (!JSON.stringify(record).includes(prefix)) return;
                 const output = { event: "mail_domain_setup_failure" };
-                visit(logs, output);
+                visit(record, output);
                 process.stdout.write(JSON.stringify(output) + "\\n");
               });
             ' || {
