@@ -8,6 +8,7 @@ describe('Mail domain setup retry', () => {
     getSending: jest.fn(),
     enableSending: jest.fn(),
     getSendingDns: jest.fn(),
+    ensureSendingDns: jest.fn(),
     getPublicSendingDns: jest.fn(),
     ensureEventSubscription: jest.fn(),
     verifyAuthRecords: jest.fn(),
@@ -19,6 +20,7 @@ describe('Mail domain setup retry', () => {
     cloudflare.getRouting.mockResolvedValue({ enabled: true });
     cloudflare.getSending.mockResolvedValue({ enabled: true, tag: 'sender-id' });
     cloudflare.getSendingDns.mockResolvedValue([]);
+    cloudflare.ensureSendingDns.mockResolvedValue(undefined);
     cloudflare.getPublicSendingDns.mockResolvedValue([]);
     cloudflare.ensureEventSubscription.mockResolvedValue(null);
     cloudflare.verifyAuthRecords.mockReturnValue(false);
@@ -32,7 +34,27 @@ describe('Mail domain setup retry', () => {
     }, cloudflare);
 
     expect(cloudflare.enableRouting).not.toHaveBeenCalled();
+    expect(cloudflare.ensureSendingDns).toHaveBeenCalledWith('zone-id', 'mkety.com', []);
     expect(result).toMatchObject({ zoneId: 'zone-id', routingEnabled: false, sendingEnabled: true });
+  });
+
+  it('logs a safe stage and provider code when sending DNS provisioning fails', async () => {
+    const log=jest.spyOn(console,'error').mockImplementation(() => undefined);
+    cloudflare.getSendingDns.mockResolvedValue([{type:'TXT',name:'cf-bounce.mkety.com',content:'v=spf1 test'}]);
+    cloudflare.ensureSendingDns.mockRejectedValue(Object.assign(new Error('mail_sending_dns_conflict'),{
+      name:'CloudflareApiError',httpStatus:403,providerCode:10000,
+    }));
+
+    const result=await provisionMailDomain('mkety.com',{
+      allowed:true,configureRouting:false,configureSending:true,
+    },cloudflare);
+
+    expect(result).toMatchObject({sendingEnabled:true,failed:true});
+    expect(log).toHaveBeenCalledWith('[mail-domain-setup] provisioning failed',expect.objectContaining({
+      domain:'mkety.com',stage:'ensure_sending_dns',errorName:'CloudflareApiError',httpStatus:403,providerCode:10000,
+      safeErrorCode:'mail_sending_dns_conflict',
+    }));
+    log.mockRestore();
   });
 
   it('does not enable an already configured routing zone again', async () => {
