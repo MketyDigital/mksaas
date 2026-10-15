@@ -5,7 +5,9 @@ on:
     paths:
       - 'customer-apps/assist/**'
       - '.github/workflows/mkety-assist-ci.yml'
+      - '.github/workflows/mkety-assist-starpips-credit-audit.yml'
       - '.github/workflows/mkety-assist-deploy.yml'
+      - '.github/workflows/mkety-assist-starpips-credit-audit.yml'
   workflow_dispatch:
 
 permissions:
