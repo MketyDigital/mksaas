@@ -1,0 +1,103 @@
+name: Mkety Assist Starpips Credit Audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: Number of recent days to inspect (1–90)
+        required: true
+        default: "30"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mkety-assist-starpips-credit-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      MKETY_ASSIST_CF_SAAS_TOKEN: ${{ secrets.MKETY_ASSIST_CF_SAAS_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      AUDIT_CUSTOMER_ID: starpips
+      AUDIT_DAYS: ${{ inputs.days }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Require bounded audit inputs and credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$AUDIT_DAYS" =~ ^[0-9]{1,2}$ ]] && (( AUDIT_DAYS >= 1 && AUDIT_DAYS <= 90 )) || { echo 'days must be 1–90'; exit 1; }
+          [[ "$AUDIT_CUSTOMER_ID" == 'starpips' ]] || { echo 'Unexpected customer scope'; exit 1; }
+          [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]] || { echo 'CLOUDFLARE_ACCOUNT_ID is required'; exit 1; }
+          [[ -n "${CLOUDFLARE_API_TOKEN:-}" || -n "${MKETY_ASSIST_CF_SAAS_TOKEN:-}" ]] || { echo 'An existing Cloudflare D1 token is required'; exit 1; }
+          echo 'Audit is constrained to customer starpips and a maximum of 90 days.'
+
+      - name: Resolve existing production D1 database (read only)
+        id: d1
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database?name=mkety-assist-prod"
+          token="${CLOUDFLARE_API_TOKEN:-}"
+          source=primary
+          response="$(curl --fail-with-body --silent --show-error "$endpoint" -H "Authorization: Bearer $token" 2>/dev/null || true)"
+          if ! RESPONSE="$response" node -e 'const d=JSON.parse(process.env.RESPONSE||"{}");process.exit(d.success&&d.result?.length===1?0:1)'; then
+            token="$MKETY_ASSIST_CF_SAAS_TOKEN"
+            source=saas
+            response="$(curl --fail-with-body --silent --show-error "$endpoint" -H "Authorization: Bearer $token")"
+            RESPONSE="$response" node -e 'const d=JSON.parse(process.env.RESPONSE||"{}");if(!d.success||d.result?.length!==1)process.exit(1)'
+          fi
+          d1_id="$(RESPONSE="$response" node -e 'const d=JSON.parse(process.env.RESPONSE);process.stdout.write(d.result[0].uuid)')"
+          [[ "$d1_id" =~ ^[0-9a-fA-F-]{36}$ ]] || { echo 'Cloudflare returned an invalid D1 id'; exit 1; }
+          echo "database_id=$d1_id" >> "$GITHUB_OUTPUT"
+          echo "token_source=$source" >> "$GITHUB_OUTPUT"
+
+      - name: Build isolated audit Wrangler config
+        working-directory: customer-apps/assist
+        env:
+          AUDIT_DB_ID: ${{ steps.d1.outputs.database_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs=require('node:fs');
+          const base=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+          delete base.env;
+          base.d1_databases=(base.d1_databases||[]).map((binding)=>binding.binding==='DB'?{...binding,database_id:process.env.AUDIT_DB_ID}:binding);
+          if(!base.d1_databases.some((binding)=>binding.binding==='DB'&&binding.database_id===process.env.AUDIT_DB_ID)) throw new Error('Could not resolve isolated Assist DB binding');
+          base.workers_dev=false;
+          fs.writeFileSync('wrangler.audit.jsonc',JSON.stringify(base,null,2)+'\n',{mode:0o600});
+          NODE
+
+      - name: Execute read-only aggregate audit
+        working-directory: customer-apps/assist
+        env:
+          D1_TOKEN_SOURCE: ${{ steps.d1.outputs.token_source }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$D1_TOKEN_SOURCE" == saas ]]; then export CLOUDFLARE_API_TOKEN="$MKETY_ASSIST_CF_SAAS_TOKEN"; fi
+          node ../../.github/scripts/run-starpips-credit-audit.mjs
+
+      - name: Upload sanitized aggregate report
+        uses: actions/upload-artifact@v4
+        with:
+          name: starpips-assist-credit-audit-${{ github.run_id }}
+          path: customer-apps/assist/starpips-credit-audit.json
+          if-no-files-found: error
+          retention-days: 14

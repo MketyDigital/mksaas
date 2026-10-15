@@ -5,6 +5,7 @@ on:
     paths:
       - 'customer-apps/assist/**'
       - '.github/workflows/mkety-assist-ci.yml'
+      - '.github/workflows/mkety-assist-starpips-credit-audit.yml'
       - '.github/workflows/mkety-assist-deploy.yml'
   workflow_dispatch:
 
@@ -29,6 +30,8 @@ jobs:
       - name: Production acceptance contracts
         working-directory: customer-apps/assist
         run: npm run check:all
+      - name: Read-only Starpips audit safety tests
+        run: node --test .github/scripts/assist-credit-audit.test.mjs
       - name: Check Operator browser runtime
         working-directory: customer-apps/assist
         run: npm run check:operator-ui
