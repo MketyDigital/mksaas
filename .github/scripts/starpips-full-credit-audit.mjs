@@ -384,7 +384,7 @@ export async function runAudit(env = process.env) {
   const accountId = String(env.CLOUDFLARE_ACCOUNT_ID || "");
   const databaseId = String(env.AUDIT_DATABASE_ID || "");
   const token = String(env.CLOUDFLARE_API_TOKEN || "");
-  if (!/^[a-f0-9]{32}$/i.test(accountId) || !/^[a-f0-9-]{36}$/i.test(databaseId) || token.length < 20) {
+  if (!/^[a-f0-9]{32}$/i.test(accountId) || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(databaseId) || token.length < 20) {
     throw new Error("audit_credentials_or_scope_invalid");
   }
   const queries = buildFullCreditAuditQueries();
