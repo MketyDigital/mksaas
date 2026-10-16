@@ -3,7 +3,7 @@ import { constants, createDecipheriv, generateKeyPairSync, privateDecrypt } from
 import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import {
-  assertReadOnlyQueries, buildAuditSummary, buildFullCreditAuditQueries, encryptReport, validateD1BatchResponse,
+  assertReadOnlyQueries, buildAuditSummary, buildFullCreditAuditQueries, encryptReport, safeAuditFailureCode, validateD1BatchResponse,
 } from "./starpips-full-credit-audit.mjs";
 
 function makeDb() {
@@ -86,6 +86,13 @@ test("D1 batch validator requires every query to report zero writes", () => {
     () => validateD1BatchResponse(payload, queries),
     (error) => error.message === "d1_query_failed_assistant_reservation_details_7500" && !error.message.includes("sensitive"),
   );
+});
+
+test("unexpected audit errors expose only a safe stage and error class", () => {
+  const code = safeAuditFailureCode("build_reconciliation_report", new TypeError("private D1 response detail"));
+  assert.equal(code, "audit_build_reconciliation_report_TypeError");
+  assert.equal(code.includes("private"), false);
+  assert.equal(safeAuditFailureCode("d1_request", new Error("d1_query_http_403")), "d1_query_http_403");
 });
 
 test("encrypted report envelope round-trips and hides plaintext", () => {
