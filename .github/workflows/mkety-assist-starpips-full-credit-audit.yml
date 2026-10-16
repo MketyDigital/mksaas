@@ -74,7 +74,7 @@ jobs:
             RESPONSE="$response" node -e 'const d=JSON.parse(process.env.RESPONSE||"{}");if(!d.success||d.result?.length!==1)process.exit(1)'
           fi
           d1_id="$(RESPONSE="$response" node -e 'const d=JSON.parse(process.env.RESPONSE);process.stdout.write(d.result[0].uuid)')"
-          [[ "$d1_id" =~ ^[a-fA-F0-9-]{36}$ ]] || { echo 'Cloudflare returned an invalid D1 id'; exit 1; }
+          [[ "$d1_id" =~ ^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$ ]] || { echo 'Cloudflare returned an invalid D1 id'; exit 1; }
           echo "database_id=$d1_id" >> "$GITHUB_OUTPUT"
           echo "token_source=$source" >> "$GITHUB_OUTPUT"
 
