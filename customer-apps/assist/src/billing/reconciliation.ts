@@ -116,26 +116,68 @@ export async function updateAttemptProjection(db: D1Database, input: {
   ).run();
 }
 
-export async function listUnresolvedAttempts(db: D1Database, customerId: string, limit = 50, cursor?: number | null) {
-  if (!String(customerId || "").trim()) throw new Error("attempt_customer_scope_required");
+export type AttemptReviewCursor = { updatedAt: number; attemptId: string; workloadType: "assistant" | "api_key" };
+
+export function compareAttemptReviewRows(a: any, b: any) {
+  const workloadRank = (value: any) => String(value || "assistant") === "api_key" ? 1 : 0;
+  const aId = String(a.attempt_id);
+  const bId = String(b.attempt_id);
+  return Number(b.updated_at) - Number(a.updated_at) ||
+    (aId === bId ? 0 : aId < bId ? 1 : -1) ||
+    workloadRank(a.workload_type) - workloadRank(b.workload_type);
+}
+
+export function parseAttemptReviewCursor(value?: string | null): AttemptReviewCursor | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value);
+    if (!Number.isSafeInteger(parsed.updatedAt) || parsed.updatedAt < 0 || !String(parsed.attemptId || "").trim() ||
+        !["assistant", "api_key"].includes(parsed.workloadType)) throw new Error("invalid");
+    return { updatedAt: parsed.updatedAt, attemptId: String(parsed.attemptId), workloadType: parsed.workloadType };
+  } catch {
+    throw new Error("invalid_attempt_review_cursor");
+  }
+}
+
+export async function listUnresolvedAttempts(db: D1Database, customerId?: string | null, limit = 50, cursorValue?: string | null) {
+  const scopedCustomerId = String(customerId || "").trim() || null;
   const safeLimit = Math.max(1, Math.min(100, Math.trunc(Number(limit) || 50)));
-  const rows = await db.prepare(
-    `SELECT attempt_id,customer_id,assistant_id,reservation_id,model_alias,reply_job_id,conversation_id,media_kind,
-            provider,model,status,started_at,updated_at,input_units,output_units,reasoning_units,image_units,audio_seconds,provider_cost_micros,
-            requested_reasoning_mode,applied_reasoning_mode,resolved_at
-     FROM inference_attempt_index WHERE customer_id=? AND status IN ('started','unknown_outcome','result_recorded')
-       AND (? IS NULL OR updated_at<?) ORDER BY updated_at DESC,attempt_id DESC LIMIT ?`,
-  ).bind(customerId,cursor ?? null,cursor ?? null,safeLimit).all<any>();
-  const workloadRows = await db.prepare(
-    `SELECT attempt_id,customer_id,NULL AS assistant_id,workload_type,workload_id,reservation_id,model_alias,NULL AS reply_job_id,
-            conversation_id,NULL AS media_kind,provider,model,status,started_at,updated_at,input_units,output_units,reasoning_units,
-            NULL AS image_units,NULL AS audio_seconds,provider_cost_micros,requested_reasoning_mode,applied_reasoning_mode,resolved_at
-     FROM workload_inference_attempt_index WHERE customer_id=? AND status IN ('started','unknown_outcome','result_recorded')
-       AND (? IS NULL OR updated_at<?) ORDER BY updated_at DESC,attempt_id DESC LIMIT ?`,
-  ).bind(customerId,cursor ?? null,cursor ?? null,safeLimit).all<any>();
-  return [...(rows.results ?? []), ...(workloadRows.results ?? [])]
-    .sort((a: any,b: any) => Number(b.updated_at)-Number(a.updated_at) || String(b.attempt_id).localeCompare(String(a.attempt_id)))
-    .slice(0,safeLimit).map((row: any) => ({ ...row }));
+  const cursor = parseAttemptReviewCursor(cursorValue);
+  const assistantRows = await db.prepare(
+    `SELECT a.attempt_id,a.customer_id,a.assistant_id,'assistant' AS workload_type,NULL AS workload_id,
+            a.reservation_id,a.model_alias,a.reply_job_id,a.conversation_id,a.media_kind,a.provider,a.model,a.status,
+            a.started_at,a.updated_at,a.input_units,a.output_units,a.reasoning_units,a.image_units,a.audio_seconds,
+            a.provider_cost_micros,a.requested_reasoning_mode,a.applied_reasoning_mode,a.resolved_at,
+            COALESCE(r.reserved_credits,0) AS reserved_credits
+     FROM inference_attempt_index a LEFT JOIN credit_reservations r
+       ON r.id=a.reservation_id AND r.customer_id=a.customer_id AND r.assistant_id=a.assistant_id AND r.status='open'
+     WHERE (? IS NULL OR a.customer_id=?) AND a.status IN ('started','unknown_outcome','result_recorded')
+       AND NOT EXISTS(SELECT 1 FROM ops_credit_dispositions d WHERE d.workload_type='assistant' AND d.attempt_id=a.attempt_id)
+       AND (? IS NULL OR a.updated_at<? OR (a.updated_at=? AND a.attempt_id<?))
+     ORDER BY a.updated_at DESC,a.attempt_id DESC LIMIT ?`,
+  ).bind(scopedCustomerId,scopedCustomerId,cursor?.updatedAt ?? null,cursor?.updatedAt ?? null,cursor?.updatedAt ?? null,
+    cursor?.attemptId ?? null,safeLimit + 1).all<any>();
+  const apiRows = await db.prepare(
+    `SELECT a.attempt_id,a.customer_id,NULL AS assistant_id,a.workload_type,a.workload_id,a.reservation_id,a.model_alias,
+            NULL AS reply_job_id,a.conversation_id,NULL AS media_kind,a.provider,a.model,a.status,a.started_at,a.updated_at,
+            a.input_units,a.output_units,a.reasoning_units,NULL AS image_units,NULL AS audio_seconds,a.provider_cost_micros,
+            a.requested_reasoning_mode,a.applied_reasoning_mode,a.resolved_at,COALESCE(r.reserved_credits,0) AS reserved_credits
+     FROM workload_inference_attempt_index a LEFT JOIN raw_model_reservations r
+       ON r.id=a.reservation_id AND r.customer_id=a.customer_id AND r.api_key_id=a.workload_id AND r.status='open'
+     WHERE (? IS NULL OR a.customer_id=?) AND a.status IN ('started','unknown_outcome','result_recorded')
+       AND NOT EXISTS(SELECT 1 FROM ops_credit_dispositions d WHERE d.workload_type='api_key' AND d.attempt_id=a.attempt_id)
+       AND (? IS NULL OR a.updated_at<? OR (a.updated_at=? AND (a.attempt_id<? OR (a.attempt_id=? AND ?='assistant'))))
+     ORDER BY a.updated_at DESC,a.attempt_id DESC LIMIT ?`,
+  ).bind(scopedCustomerId,scopedCustomerId,cursor?.updatedAt ?? null,cursor?.updatedAt ?? null,cursor?.updatedAt ?? null,
+    cursor?.attemptId ?? null,cursor?.attemptId ?? null,cursor?.workloadType ?? null,safeLimit + 1).all<any>();
+  const all = [...(assistantRows.results ?? []), ...(apiRows.results ?? [])].sort(compareAttemptReviewRows);
+  const hasMore = all.length > safeLimit;
+  const attempts = all.slice(0, safeLimit).map((row: any) => ({ ...row }));
+  const last = attempts.at(-1);
+  const nextCursor = hasMore && last ? JSON.stringify({
+    updatedAt: Number(last.updated_at), attemptId: String(last.attempt_id), workloadType: last.workload_type,
+  } satisfies AttemptReviewCursor) : null;
+  return { attempts, nextCursor };
 }
 
 type ResolutionInput = {
@@ -370,6 +412,92 @@ export async function resolveUnknownAttempt(db: D1Database, journal: any, input:
      VALUES (?,?,?,?,?,?,?,?)`,
   ).bind(id("ira"),attemptId,idempotencyKey,resultOutcome,evidenceSummary,reason,operatorUserId,unix()).run();
   return { outcome: resultOutcome, released, settled, recoveredText, replyJobId: row.reply_job_id || null, idempotent: false };
+}
+
+export async function returnUnknownAttemptCredits(db: D1Database, namespace: DurableObjectNamespace<any>, input: {
+  attemptId: string; customerId: string; workloadType: "assistant" | "api_key"; workloadId: string;
+  operatorUserId: string; idempotencyKey: string; reason: string; evidenceSummary: string;
+}) {
+  const attemptId = String(input.attemptId || "").trim();
+  const customerId = String(input.customerId || "").trim();
+  const workloadId = String(input.workloadId || "").trim();
+  const idempotencyKey = String(input.idempotencyKey || "").trim();
+  const reason = String(input.reason || "").trim().slice(0, 500);
+  const evidenceSummary = String(input.evidenceSummary || "").trim().slice(0, 500);
+  if (!attemptId || !customerId || !workloadId || !input.operatorUserId || !idempotencyKey || idempotencyKey.length > 160 || !reason || !evidenceSummary) {
+    throw new Error("resolution_evidence_required");
+  }
+  const prior = await db.prepare(
+    "SELECT attempt_id,customer_id,workload_type,workload_id,amount_credits,reason,evidence_summary FROM ops_credit_dispositions WHERE idempotency_key=? LIMIT 1",
+  ).bind(idempotencyKey).first<any>();
+  if (prior) {
+    if (String(prior.attempt_id) !== attemptId || String(prior.customer_id) !== customerId ||
+        String(prior.workload_type) !== input.workloadType || String(prior.workload_id) !== workloadId ||
+        String(prior.reason) !== reason || String(prior.evidence_summary) !== evidenceSummary) throw new Error("resolution_idempotency_key_conflict");
+    const reply = input.workloadType === "assistant"
+      ? await db.prepare("SELECT reply_job_id FROM inference_attempt_index WHERE attempt_id=? AND customer_id=? AND assistant_id=? LIMIT 1")
+        .bind(attemptId,customerId,workloadId).first<any>()
+      : null;
+    return { outcome: "ops_credit_return", returnedCredits: Number(prior.amount_credits), idempotent: true, replyJobId: reply?.reply_job_id || null };
+  }
+  const priorAttempt = await db.prepare(
+    "SELECT idempotency_key FROM ops_credit_dispositions WHERE attempt_id=? AND customer_id=? AND workload_type=? AND workload_id=? LIMIT 1",
+  ).bind(attemptId, customerId, input.workloadType, workloadId).first<any>();
+  if (priorAttempt) throw new Error("attempt_already_has_ops_credit_disposition");
+
+  let reservation: any;
+  let identity: any;
+  let replyJobId: string | null = null;
+  if (input.workloadType === "api_key") {
+    identity = { attemptId, customerId, workloadType: "api_key" as const, workloadId };
+    const row = await db.prepare(
+      "SELECT reservation_id,status,workload_id FROM workload_inference_attempt_index WHERE attempt_id=? AND customer_id=? AND workload_type='api_key' AND workload_id=? LIMIT 1",
+    ).bind(attemptId, customerId, workloadId).first<any>();
+    if (!row) throw new Error("attempt_not_found_in_scope");
+    reservation = await db.prepare(
+      "SELECT id,status,reserved_credits FROM raw_model_reservations WHERE id=? AND customer_id=? AND api_key_id=? LIMIT 1",
+    ).bind(row.reservation_id, customerId, workloadId).first<any>();
+  } else {
+    identity = { attemptId, customerId, assistantId: workloadId };
+    const row = await db.prepare(
+      "SELECT reservation_id,status,assistant_id,reply_job_id FROM inference_attempt_index WHERE attempt_id=? AND customer_id=? AND assistant_id=? LIMIT 1",
+    ).bind(attemptId, customerId, workloadId).first<any>();
+    if (!row) throw new Error("attempt_not_found_in_scope");
+    replyJobId = row.reply_job_id || null;
+    reservation = await db.prepare(
+      "SELECT id,status,reserved_credits FROM credit_reservations WHERE id=? AND customer_id=? AND assistant_id=? LIMIT 1",
+    ).bind(row.reservation_id, customerId, workloadId).first<any>();
+  }
+  if (!reservation) throw new Error("attempt_reservation_not_found");
+  if (reservation.status !== "open") throw new Error("reservation_already_resolved");
+  const journal = settlementJournalStub(namespace, customerId, workloadId, input.workloadType === "api_key" ? "api_key" : "assistant");
+  const journalAttempt = await journal.getAttempt(identity);
+  if (!journalAttempt || journalAttempt.status !== "unknown_outcome" &&
+      !(journalAttempt.status === "result_recorded" && !String(journalAttempt.result?.responseText || "").trim())) {
+    throw new Error("attempt_outcome_not_eligible_for_goodwill_return");
+  }
+  const disposition = {
+    attemptId, idempotencyKey, reason, evidenceSummary, operatorUserId: input.operatorUserId,
+    ...(input.workloadType === "assistant" ? { assistantId: workloadId } : {}),
+  };
+  let released: boolean;
+  try {
+    released = input.workloadType === "api_key"
+      ? await releaseRawModelCredits(db, String(reservation.id), customerId, workloadId, disposition)
+      : await releaseInferenceReservation(db, String(reservation.id), customerId, Number(reservation.reserved_credits), disposition as any);
+  } catch (error) {
+    const raced = await db.prepare(
+      "SELECT attempt_id,customer_id,workload_type,workload_id,amount_credits,reason,evidence_summary FROM ops_credit_dispositions WHERE idempotency_key=? LIMIT 1",
+    ).bind(idempotencyKey).first<any>();
+    if (!raced || String(raced.attempt_id) !== attemptId || String(raced.customer_id) !== customerId ||
+        String(raced.workload_type) !== input.workloadType || String(raced.workload_id) !== workloadId ||
+        String(raced.reason) !== reason || String(raced.evidence_summary) !== evidenceSummary) throw error;
+    return { outcome: "ops_credit_return", returnedCredits: Number(raced.amount_credits), idempotent: true, replyJobId };
+  }
+  if (!released) throw new Error("reservation_release_not_confirmed");
+  return {
+    outcome: "ops_credit_return", returnedCredits: Number(reservation.reserved_credits), idempotent: false, replyJobId,
+  };
 }
 
 export type WorkloadResolutionInput = {

@@ -57,10 +57,21 @@ export async function reserveRawModelCredits(
   return { id: reservationId, status: "open", reservedCredits: safeCredits };
 }
 
-export async function releaseRawModelCredits(db: D1Database, reservationId: string, customerId: string, apiKeyId: string) {
+export async function releaseRawModelCredits(db: D1Database, reservationId: string, customerId: string, apiKeyId: string,
+  opsDisposition?: { attemptId: string; idempotencyKey: string; reason: string; evidenceSummary: string; operatorUserId: string }) {
   const now = unix();
   const token = id("rrel");
-  const results = await db.batch([
+  const statements: D1PreparedStatement[] = [];
+  if (opsDisposition) statements.push(db.prepare(
+    `INSERT INTO ops_credit_dispositions
+     (id,attempt_id,customer_id,workload_type,workload_id,reservation_id,action,amount_credits,idempotency_key,reason,evidence_summary,operator_user_id,created_at)
+     SELECT ?,?,?,'api_key',?,?,'owner_credit_return',reserved_credits,?,?,?,?,?
+     FROM raw_model_reservations WHERE id=? AND customer_id=? AND api_key_id=? AND status='open'`,
+  ).bind(id("ocd"), opsDisposition.attemptId, customerId, apiKeyId, reservationId,
+    opsDisposition.idempotencyKey, opsDisposition.reason, opsDisposition.evidenceSummary, opsDisposition.operatorUserId,
+    now, reservationId, customerId, apiKeyId));
+  const updateIndex = statements.length;
+  statements.push(
     db.prepare(
       "UPDATE raw_model_reservations SET status='released',settled_at=?,resolution_token=? WHERE id=? AND customer_id=? AND api_key_id=? AND status='open'",
     ).bind(now, token, reservationId, customerId, apiKeyId),
@@ -73,8 +84,9 @@ export async function releaseRawModelCredits(db: D1Database, reservationId: stri
        SELECT ?,?,NULL,'api_key',?,(SELECT reserved_credits FROM raw_model_reservations WHERE id=?),'inference_release',?,balance,? FROM credit_accounts
        WHERE customer_id=? AND EXISTS (SELECT 1 FROM raw_model_reservations WHERE id=? AND status='released' AND resolution_token=?)`,
     ).bind(id("led"), customerId, apiKeyId, reservationId, reservationId, now, customerId, reservationId, token),
-  ]);
-  return Number(results[0]?.meta?.changes || 0) > 0;
+  );
+  const results = await db.batch(statements);
+  return Number(results[updateIndex]?.meta?.changes || 0) > 0;
 }
 
 export async function settleRawModelCredits(

@@ -4,25 +4,31 @@ const unix = () => Math.floor(Date.now() / 1000);
 const startOfMonthUnix = () => { const now = new Date(); return Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000); };
 
 export async function reserveInference(db: D1Database, customerId: string, assistantId: string, credits: number, idempotencyKey?: string) {
+  if (!Number.isSafeInteger(credits) || credits <= 0) throw new Error("invalid_inference_reservation");
   if (idempotencyKey) {
     const existing = await db.prepare(
       "SELECT id,status,reserved_credits FROM credit_reservations WHERE customer_id=? AND idempotency_key=? LIMIT 1",
     ).bind(customerId, idempotencyKey).first<any>();
     if (existing) return { id: String(existing.id), status: String(existing.status), reservedCredits: Number(existing.reserved_credits || 0) };
   }
-  const limit = await db.prepare("SELECT monthly_credit_cap FROM assistants WHERE id=? AND customer_id=?").bind(assistantId, customerId).first<any>();
-  if (limit?.monthly_credit_cap) {
-    const start = startOfMonthUnix();
-    const used = await db.prepare(
-      "SELECT COALESCE(SUM(credits_charged),0) AS used FROM usage_events WHERE customer_id=? AND assistant_id=? AND created_at>=?",
-    ).bind(customerId, assistantId, start).first<any>();
-    if (parseFloat(String(used?.used || 0)) + credits > parseFloat(String(limit.monthly_credit_cap))) return null;
-  }
   const reservationId = id("res");
   const now = unix();
+  const monthStart = startOfMonthUnix();
   const results = await db.batch([
-    db.prepare("UPDATE credit_accounts SET balance=balance-?,updated_at=? WHERE customer_id=? AND balance>=?")
-      .bind(credits, now, customerId, credits),
+    db.prepare(
+      `UPDATE credit_accounts SET balance=balance-?,updated_at=?
+       WHERE customer_id=? AND balance>=?
+         AND (? IS NULL OR NOT EXISTS(SELECT 1 FROM credit_reservations WHERE customer_id=? AND idempotency_key=?))
+         AND EXISTS(
+           SELECT 1 FROM assistants a WHERE a.id=? AND a.customer_id=?
+             AND (a.monthly_credit_cap IS NULL OR a.monthly_credit_cap_mode!='hard' OR
+               ((SELECT COALESCE(SUM(u.credits_charged),0) FROM usage_events u
+                 WHERE u.customer_id=a.customer_id AND u.assistant_id=a.id AND u.created_at>=?) +
+                (SELECT COALESCE(SUM(r.reserved_credits),0) FROM credit_reservations r
+                 WHERE r.customer_id=a.customer_id AND r.assistant_id=a.id AND r.status='open') + ?) <= a.monthly_credit_cap)
+         )`,
+    ).bind(credits, now, customerId, credits, idempotencyKey ?? null, customerId, idempotencyKey ?? null,
+      assistantId, customerId, monthStart, credits),
     db.prepare(
       `INSERT INTO credit_reservations (id,customer_id,assistant_id,reserved_credits,status,created_at,idempotency_key)
        SELECT ?,?,?,?,'open',?,? WHERE changes()>0`,
@@ -45,10 +51,21 @@ export async function reserveInference(db: D1Database, customerId: string, assis
   return { id: reservationId, status: "open", reservedCredits: credits };
 }
 
-export async function releaseInferenceReservation(db: D1Database, reservationId: string, customerId: string, reserved: number) {
+export async function releaseInferenceReservation(db: D1Database, reservationId: string, customerId: string, reserved: number,
+  opsDisposition?: { attemptId: string; assistantId: string; idempotencyKey: string; reason: string; evidenceSummary: string; operatorUserId: string }) {
   const now = unix();
   const resolutionToken = id("rel");
-  const results = await db.batch([
+  const statements: D1PreparedStatement[] = [];
+  if (opsDisposition) statements.push(db.prepare(
+    `INSERT INTO ops_credit_dispositions
+     (id,attempt_id,customer_id,workload_type,workload_id,reservation_id,action,amount_credits,idempotency_key,reason,evidence_summary,operator_user_id,created_at)
+     SELECT ?,?,?,'assistant',?,?,'owner_credit_return',reserved_credits,?,?,?,?,?
+     FROM credit_reservations WHERE id=? AND customer_id=? AND assistant_id=? AND status='open'`,
+  ).bind(id("ocd"), opsDisposition.attemptId, customerId, opsDisposition.assistantId, reservationId,
+    opsDisposition.idempotencyKey, opsDisposition.reason, opsDisposition.evidenceSummary, opsDisposition.operatorUserId,
+    now, reservationId, customerId, opsDisposition.assistantId));
+  const updateIndex = statements.length;
+  statements.push(
     db.prepare(
       "UPDATE credit_reservations SET status='released',settled_at=?,resolution_token=? WHERE id=? AND customer_id=? AND status='open'",
     ).bind(now, resolutionToken, reservationId, customerId),
@@ -61,8 +78,9 @@ export async function releaseInferenceReservation(db: D1Database, reservationId:
        SELECT ?,?,?, 'inference_release',?,balance,? FROM credit_accounts
        WHERE customer_id=? AND EXISTS(SELECT 1 FROM credit_reservations WHERE id=? AND status='released' AND resolution_token=?)`,
     ).bind(id("led"), customerId, Math.max(0, Math.trunc(reserved)), reservationId, now, customerId, reservationId, resolutionToken),
-  ]);
-  return Number(results[0]?.meta?.changes || 0) > 0;
+  );
+  const results = await db.batch(statements);
+  return Number(results[updateIndex]?.meta?.changes || 0) > 0;
 }
 
 export async function settleInference(

@@ -6,7 +6,7 @@ import { normalizeRateMultiplierBps } from "./billing/rate-multiplier.ts";
 import { azureFoundryInputItems } from "./providers/azure-foundry.ts";
 import { bedrockHeadersFromCredentialJson, vertexAccessTokenFromServiceAccount } from "./providers/structured-credentials";
 import { clampToolResponse, validateToolEndpoint } from "./security/outbound";
-import { archiveAssistant, deleteAssistant, listAssistantVersions, normalizeReasoningFallbackPolicy, normalizeReasoningMode, recordAssistantVersion, restoreAssistant, rollbackAssistantVersion } from "./assistants/service";
+import { archiveAssistant, deleteAssistant, listAssistantVersions, normalizeMonthlyCreditCap, normalizeMonthlyCreditCapMode, normalizeReasoningFallbackPolicy, normalizeReasoningMode, recordAssistantVersion, restoreAssistant, rollbackAssistantVersion } from "./assistants/service";
 import { assembleAssistantContext, buildKnowledgeQuery, capKnowledgeSnippets, conversationHistoryTurn, selectCompletionBudget, selectReasoningEffort } from "./conversation/context";
 import { emptyConversationMemory, summarizeArchivedMessages, type ConversationMemory } from "./conversation/memory";
 import { contextCacheKey, loadPublishedPromptSnapshot, readContextSnapshot, writeContextSnapshot, writePublishedPromptSnapshot } from "./conversation/context-cache";
@@ -876,6 +876,7 @@ export async function handleRuntimeApi(
     if (parts.length === 3 && request.method === "GET") {
       const assistant = await env.DB.prepare(
         `SELECT a.*,
+          (SELECT COALESCE(SUM(u.credits_charged),0) FROM usage_events u WHERE u.customer_id=a.customer_id AND u.assistant_id=a.id AND u.created_at>=unixepoch('now','start of month')) AS monthly_cap_used_atoms,
           (SELECT instructions FROM assistant_prompt_versions p WHERE p.assistant_id=a.id AND p.status='published' ORDER BY p.version DESC LIMIT 1) AS instructions,
           (SELECT config_json FROM assistant_channels ch WHERE ch.assistant_id=a.id AND ch.channel='telegram' LIMIT 1) AS telegram_config,
           (SELECT status FROM assistant_channels ch WHERE ch.assistant_id=a.id AND ch.channel='telegram' LIMIT 1) AS telegram_status
@@ -891,6 +892,7 @@ export async function handleRuntimeApi(
       if (assistant?.monthly_credit_cap != null) {
         assistant.monthly_credit_cap = Math.round((Number(assistant.monthly_credit_cap) / 10000) * 10000) / 10000;
       }
+      if (assistant) assistant.monthly_cap_used = Math.round((Number(assistant.monthly_cap_used_atoms || 0) / 10000) * 10000) / 10000;
       if (assistant) {
         const reasoningRoute = await resolveModelRoute(env.DB, customer.customerId, String(assistant.model_alias || ""));
         const reasoningTargets = Array.isArray(reasoningRoute?.__targets) && reasoningRoute.__targets.length
@@ -916,13 +918,24 @@ export async function handleRuntimeApi(
       if (body.reasoningFallbackPolicy !== undefined && !reasoningFallbackPolicy) {
         return json({ error: "invalid_reasoning_fallback_policy" }, 400);
       }
+      let monthlyCreditCap: number | null = null;
+      let monthlyCreditCapMode: "soft" | "hard" | null = null;
+      try {
+        if (Object.hasOwn(body, "monthlyCreditCap")) monthlyCreditCap = normalizeMonthlyCreditCap(body.monthlyCreditCap);
+        if (Object.hasOwn(body, "monthlyCreditCapMode")) monthlyCreditCapMode = normalizeMonthlyCreditCapMode(body.monthlyCreditCapMode);
+        else if (Object.hasOwn(body, "monthlyCreditCap") && monthlyCreditCap != null) monthlyCreditCapMode = "hard";
+      } catch (error) {
+        return json({ error: error instanceof Error ? error.message : "invalid_monthly_credit_cap" }, 400);
+      }
       const allowedModels = await env.DB.prepare("SELECT 1 FROM model_routes WHERE alias=? AND status='active' LIMIT 1")
         .bind(body.modelAlias || "mkety-smart").first();
       if (body.modelAlias && !allowedModels) return json({ error: "model_alias_unavailable" }, 400);
       const now = unix();
       await env.DB.prepare(
         `UPDATE assistants SET name=COALESCE(?,name),status=COALESCE(?,status),model_alias=COALESCE(?,model_alias),
-         timezone=COALESCE(?,timezone),memory_enabled=COALESCE(?,memory_enabled),monthly_credit_cap=COALESCE(?,monthly_credit_cap),
+         timezone=COALESCE(?,timezone),memory_enabled=COALESCE(?,memory_enabled),
+         monthly_credit_cap=CASE WHEN ?=1 THEN ? ELSE monthly_credit_cap END,
+         monthly_credit_cap_mode=CASE WHEN ?=1 THEN ? ELSE monthly_credit_cap_mode END,
          human_delay_enabled=COALESCE(?,human_delay_enabled),
          human_delay_min_seconds=COALESCE(?,human_delay_min_seconds),
          human_delay_max_seconds=COALESCE(?,human_delay_max_seconds),
@@ -941,7 +954,10 @@ export async function handleRuntimeApi(
         body.modelAlias ?? null,
         body.timezone ?? null,
         typeof body.memoryEnabled === "boolean" ? (body.memoryEnabled ? 1 : 0) : null,
-        body.monthlyCreditCap === undefined ? null : Math.round(Number(body.monthlyCreditCap) * 10000),
+        Object.hasOwn(body, "monthlyCreditCap") ? 1 : 0,
+        monthlyCreditCap,
+        monthlyCreditCapMode == null ? 0 : 1,
+        monthlyCreditCapMode,
         typeof body.humanDelayEnabled === "boolean" ? (body.humanDelayEnabled ? 1 : 0) : null,
         body.humanDelayMinSeconds === undefined ? null : clampNumber(body.humanDelayMinSeconds, 0, 3600),
         body.humanDelayMaxSeconds === undefined ? null : clampNumber(body.humanDelayMaxSeconds, 0, 3600),
