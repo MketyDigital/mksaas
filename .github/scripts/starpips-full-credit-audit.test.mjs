@@ -1,9 +1,9 @@
-import test from "node:test";
 import assert from "node:assert/strict";
+import { constants, createDecipheriv, generateKeyPairSync, privateDecrypt } from "node:crypto";
+import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
-import { generateKeyPairSync, privateDecrypt, constants, createDecipheriv } from "node:crypto";
 import {
-  buildFullCreditAuditQueries, buildAuditSummary, assertReadOnlyQueries, validateD1BatchResponse, encryptReport,
+  assertReadOnlyQueries, buildAuditSummary, buildFullCreditAuditQueries, encryptReport, validateD1BatchResponse,
 } from "./starpips-full-credit-audit.mjs";
 
 function makeDb() {
