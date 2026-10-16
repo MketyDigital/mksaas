@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const CUSTOMER_SLUG = "starpips";
 const scriptDir = dirname(fileURLToPath(import.meta.url));
-const PUBLIC_KEY_PATH = join(scriptDir, "starpips-audit-public.pem");
+const PUBLIC_KEY_PATH = join(scriptDir, "../audit-keys/starpips-audit-public.pem");
 
 const customerId = `(SELECT id FROM customers WHERE lower(slug)='${CUSTOMER_SLUG}' LIMIT 1)`;
 const since = "unixepoch('now','-15 minutes')";
