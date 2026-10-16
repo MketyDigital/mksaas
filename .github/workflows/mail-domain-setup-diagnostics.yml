@@ -61,7 +61,7 @@ jobs:
                   if (!(key in output) && key in value) {
                     const item = value[key];
                     if (key === "domain" && typeof item === "string" && /^[a-z0-9.-]+$/.test(item)) output[key] = item;
-                    if (key === "path" && typeof item === "string" && /^\/(?:api\/)?(?:app\/)?[a-z0-9-]+\/mail\/(?:domains|migration\/archive\/(?:chunk|complete))$/.test(item)) output[key] = item;
+                    if (key === "path" && typeof item === "string" && (/^\/app\/[a-z0-9-]+\/mail\/domains$/.test(item) || /^\/api\/mail\/(?:domains|migration\/archive\/(?:chunk|complete))$/.test(item))) output[key] = item;
                     if (key === "method" && ["GET", "POST"].includes(item)) output[key] = item;
                     if (["status", "responseStatus"].includes(key) && Number.isInteger(item) && item >= 400 && item <= 599) output[key] = item;
                     if (["rayId", "traceId"].includes(key) && typeof item === "string" && /^[a-f0-9]{16,32}$/i.test(item)) output[key] = item;
