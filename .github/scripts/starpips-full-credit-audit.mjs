@@ -1,7 +1,7 @@
-import { createCipheriv, publicEncrypt, randomBytes, constants } from "node:crypto";
+import { constants, createCipheriv, publicEncrypt, randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const CUSTOMER_SLUG = "starpips";
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -293,7 +293,6 @@ export function buildAuditSummary(sections, now = Math.floor(Date.now() / 1000))
     first_started_at: Math.min(...group.map((row) => numeric(row.started_at))),
     last_started_at: Math.max(...group.map((row) => numeric(row.started_at))),
   }));
-  const attemptsWithoutHashes = attempts.map(({ request_hash, workload_id, ...row }) => row);
   const providerAttemptGroups = new Map();
   for (const event of usage) {
     const id = String(event.provider_attempt_id || "");
