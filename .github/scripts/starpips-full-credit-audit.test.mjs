@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { constants, createDecipheriv, generateKeyPairSync, privateDecrypt } from "node:crypto";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -86,6 +87,13 @@ test("D1 batch validator requires every query to report zero writes", () => {
     () => validateD1BatchResponse(payload, queries),
     (error) => error.message === "d1_query_failed_assistant_reservation_details_7500" && !error.message.includes("sensitive"),
   );
+});
+
+test("checked-in audit public key is readable and valid for report encryption", () => {
+  const publicKey = readFileSync(new URL("../audit-keys/starpips-audit-public.pem", import.meta.url), "utf8");
+  const envelope = JSON.parse(encryptReport({ customerSlug: "starpips" }, publicKey));
+  assert.equal(envelope.format, "mkety-assist-encrypted-audit-v1");
+  assert.ok(envelope.ciphertext);
 });
 
 test("unexpected audit errors expose only a safe stage and error class", () => {
