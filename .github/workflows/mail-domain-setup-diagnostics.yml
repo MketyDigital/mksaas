@@ -51,6 +51,7 @@ jobs:
               const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
               const prefixes = [
                 ["[mail-domain-setup] provisioning failed", "mail_domain_setup_failure"],
+                ["[mail-domain-setup] retry started", "mail_domain_setup_retry_started"],
                 ["[vinext] Route handler error", "mail_route_handler_error"]
               ];
               const safeKeys = ["domain", "stage", "errorName", "httpStatus", "providerCode", "safeErrorCode", "path", "method", "status", "responseStatus", "rayId", "traceId"];
