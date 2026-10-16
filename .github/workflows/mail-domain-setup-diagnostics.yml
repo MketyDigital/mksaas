@@ -49,8 +49,11 @@ jobs:
             node --input-type=module -e '
               import { createInterface } from "node:readline";
               const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
-              const prefix = "[mail-domain-setup] provisioning failed";
-              const safeKeys = ["domain", "stage", "errorName", "httpStatus", "providerCode", "safeErrorCode"];
+              const prefixes = [
+                ["[mail-domain-setup] provisioning failed", "mail_domain_setup_failure"],
+                ["[vinext] Route handler error", "mail_route_handler_error"]
+              ];
+              const safeKeys = ["domain", "stage", "errorName", "httpStatus", "providerCode", "safeErrorCode", "path", "method", "status", "responseStatus", "rayId", "traceId"];
               function visit(value, output) {
                 if (!value || typeof value !== "object") return;
                 if (Array.isArray(value)) { for (const item of value) visit(item, output); return; }
@@ -58,6 +61,10 @@ jobs:
                   if (!(key in output) && key in value) {
                     const item = value[key];
                     if (key === "domain" && typeof item === "string" && /^[a-z0-9.-]+$/.test(item)) output[key] = item;
+                    if (key === "path" && typeof item === "string" && (/^\/app\/[a-z0-9-]+\/mail\/domains$/.test(item) || /^\/api\/mail\/(?:domains|migration\/archive\/(?:chunk|complete))$/.test(item))) output[key] = item;
+                    if (key === "method" && ["GET", "POST"].includes(item)) output[key] = item;
+                    if (["status", "responseStatus"].includes(key) && Number.isInteger(item) && item >= 400 && item <= 599) output[key] = item;
+                    if (["rayId", "traceId"].includes(key) && typeof item === "string" && /^[a-f0-9]{16,32}$/i.test(item)) output[key] = item;
                     if (key === "stage" && typeof item === "string" && /^[a-z0-9_]+$/.test(item)) output[key] = item;
                     if (key === "errorName" && typeof item === "string" && /^[A-Za-z0-9_]+$/.test(item)) output[key] = item;
                     if ((key === "httpStatus" || key === "providerCode") && Number.isInteger(item)) output[key] = item;
@@ -69,8 +76,10 @@ jobs:
               rl.on("line", line => {
                 let record;
                 try { record = JSON.parse(line); } catch { return; }
-                if (!JSON.stringify(record).includes(prefix)) return;
-                const output = { event: "mail_domain_setup_failure" };
+                const serialized = JSON.stringify(record);
+                const match = prefixes.find(([prefix]) => serialized.includes(prefix));
+                if (!match) return;
+                const output = { event: match[1] };
                 visit(record, output);
                 process.stdout.write(JSON.stringify(output) + "\\n");
               });
