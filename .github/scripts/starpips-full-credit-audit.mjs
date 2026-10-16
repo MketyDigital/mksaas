@@ -348,14 +348,29 @@ export function buildAuditSummary(sections, now = Math.floor(Date.now() / 1000))
   };
 }
 
+function safeD1ErrorCode(container) {
+  const values = [...(container?.errors || []), ...(container?.messages || [])]
+    .map((item) => item?.code)
+    .filter((code) => Number.isInteger(Number(code)) && Number(code) > 0)
+    .map((code) => String(Number(code)));
+  return values.length ? [...new Set(values)].slice(0, 3).join("_") : "unknown";
+}
+
 export function validateD1BatchResponse(payload, queries) {
-  if (!payload || payload.success !== true || !Array.isArray(payload.result) || payload.result.length !== queries.length) {
+  if (!payload || payload.success !== true) {
+    throw new Error(`d1_batch_request_failed_${safeD1ErrorCode(payload)}`);
+  }
+  if (!Array.isArray(payload.result) || payload.result.length !== queries.length) {
     throw new Error("d1_batch_response_invalid");
   }
   let rowsRead = 0;
-  for (const item of payload.result) {
-    if (item?.success === false || !item?.meta || Number(item.meta.rows_written) !== 0 || item.meta.changed_db === true) {
-      throw new Error("d1_read_only_invariant_failed");
+  for (const [index, item] of payload.result.entries()) {
+    const queryName = String(queries[index]?.name || "unknown").replace(/[^a-z0-9_]/gi, "_");
+    if (item?.success === false) {
+      throw new Error(`d1_query_failed_${queryName}_${safeD1ErrorCode(item)}`);
+    }
+    if (!item?.meta || Number(item.meta.rows_written) !== 0 || item.meta.changed_db === true) {
+      throw new Error(`d1_read_only_invariant_failed_${queryName}`);
     }
     rowsRead += Number(item.meta.rows_read || 0);
   }
