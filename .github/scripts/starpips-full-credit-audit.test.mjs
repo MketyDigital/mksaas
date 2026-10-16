@@ -79,7 +79,13 @@ test("D1 batch validator requires every query to report zero writes", () => {
   const payload = { success: true, result: queries.map(() => ({ success: true, meta: { rows_read: 1, rows_written: 0, changed_db: false }, results: [] })) };
   assert.deepEqual(validateD1BatchResponse(payload, queries), { rowsRead: queries.length, rowsWritten: 0 });
   payload.result[0].meta.rows_written = 1;
-  assert.throws(() => validateD1BatchResponse(payload, queries), /d1_read_only_invariant_failed/);
+  assert.throws(() => validateD1BatchResponse(payload, queries), /d1_read_only_invariant_failed_customer_account/);
+  payload.result[0].meta.rows_written = 0;
+  payload.result[3] = { success: false, errors: [{ code: 7500, message: "sensitive SQL or row detail" }] };
+  assert.throws(
+    () => validateD1BatchResponse(payload, queries),
+    (error) => error.message === "d1_query_failed_assistant_reservation_details_7500" && !error.message.includes("sensitive"),
+  );
 });
 
 test("encrypted report envelope round-trips and hides plaintext", () => {
