@@ -377,6 +377,14 @@ export function validateD1BatchResponse(payload, queries) {
   return { rowsRead, rowsWritten: 0 };
 }
 
+export function safeAuditFailureCode(stage, error) {
+  const message = String(error?.message || "");
+  if (/^[a-z0-9_]+$/i.test(message)) return message;
+  const safeStage = String(stage || "unknown").replace(/[^a-z0-9_]/gi, "_");
+  const safeName = String(error?.name || "error").replace(/[^a-z0-9_]/gi, "_");
+  return `audit_${safeStage}_${safeName}`;
+}
+
 export function encryptReport(report, publicKeyPem) {
   const dataKey = randomBytes(32);
   const iv = randomBytes(12);
@@ -395,14 +403,18 @@ export function encryptReport(report, publicKeyPem) {
 }
 
 export async function runAudit(env = process.env) {
+  let stage = "validate_scope";
+  try {
   const accountId = String(env.CLOUDFLARE_ACCOUNT_ID || "");
   const databaseId = String(env.AUDIT_DATABASE_ID || "");
   const token = String(env.CLOUDFLARE_API_TOKEN || "");
   if (!/^[a-f0-9]{32}$/i.test(accountId) || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(databaseId) || token.length < 20) {
     throw new Error("audit_credentials_or_scope_invalid");
   }
+    stage = "prepare_queries";
   const queries = buildFullCreditAuditQueries();
   assertReadOnlyQueries(queries);
+    stage = "d1_request";
   const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;
   const response = await fetch(endpoint, {
     method: "POST",
@@ -411,17 +423,21 @@ export async function runAudit(env = process.env) {
     signal: AbortSignal.timeout(120_000),
   });
   if (!response.ok) throw new Error(`d1_query_http_${response.status}`);
+    stage = "response_body";
   const declaredLength = Number(response.headers.get("content-length") || 0);
   if (declaredLength > 50 * 1024 * 1024) throw new Error("d1_audit_response_exceeds_safe_limit");
   const bodyText = await response.text();
   if (Buffer.byteLength(bodyText) > 50 * 1024 * 1024) throw new Error("d1_audit_response_exceeds_safe_limit");
   let payload;
   try { payload = JSON.parse(bodyText); } catch { throw new Error("d1_query_response_invalid_json"); }
+    stage = "validate_d1_response";
   const metrics = validateD1BatchResponse(payload, queries);
+    stage = "extract_results";
   const sections = Object.fromEntries(queries.map((item, index) => [item.name, payload.result[index].results || []]));
   if (sections.customer_account?.length !== 1 || sections.customer_account[0]?.slug?.toLowerCase() !== CUSTOMER_SLUG) {
     throw new Error("audit_customer_not_resolved_uniquely");
   }
+    stage = "build_reconciliation_report";
   const report = {
     reportType: "mkety-assist-starpips-full-history-credit-audit",
     customerSlug: CUSTOMER_SLUG,
@@ -438,14 +454,19 @@ export async function runAudit(env = process.env) {
       raw_api_attempt_details: (sections.raw_api_attempt_details || []).map(({ request_hash, workload_id, ...row }) => row),
     },
   };
+    stage = "encrypt_report";
   const publicKey = readFileSync(PUBLIC_KEY_PATH, "utf8");
   const encrypted = encryptReport(report, publicKey);
+    stage = "write_encrypted_report";
   writeFileSync("starpips-assist-full-credit-audit.enc.json", `${encrypted}\n`, { mode: 0o600 });
   if (env.GITHUB_STEP_SUMMARY) {
     writeFileSync(env.GITHUB_STEP_SUMMARY,
       "## Starpips Assist all-history D1 audit\n\nRead-only query batch completed. Zero rows written. Detailed report is encrypted and attached for the designated audit reviewer.\n");
   }
   return { queryCount: queries.length, rowsRead: metrics.rowsRead, artifactPath: "starpips-assist-full-credit-audit.enc.json" };
+  } catch (error) {
+    throw new Error(safeAuditFailureCode(stage, error));
+  }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
