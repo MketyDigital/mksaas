@@ -79,6 +79,7 @@ export async function addMailDomain(tenantSlug:string,formData:FormData){
 }
 
 export async function retryMailDomainSetup(tenantSlug:string,domainId:string){
+  console.info('[mail-domain-setup] retry started',{stage:'authorize_workspace'});
   const {tenant}=await requireMailWorkspaceAccess(tenantSlug);
   const workspace=await db.query.mailWorkspaces.findFirst({where:eq(mailWorkspaces.tenantId,tenant.id)});
   if(!workspace) redirect(`/app/${tenantSlug}/mail`);
