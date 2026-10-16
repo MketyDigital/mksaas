@@ -1,0 +1,97 @@
+name: Mkety Assist Starpips Full History Credit Audit
+
+on:
+  pull_request:
+    paths:
+      - .github/audit-keys/starpips-audit-public.pem
+      - .github/scripts/starpips-full-credit-audit.mjs
+      - .github/scripts/starpips-full-credit-audit.test.mjs
+      - .github/workflows/mkety-assist-starpips-full-credit-audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mkety-assist-starpips-full-history-credit-audit
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Test audit SQL and read-only controls
+        run: node --test .github/scripts/starpips-full-credit-audit.test.mjs
+
+  audit:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      MKETY_ASSIST_CF_SAAS_TOKEN: ${{ secrets.MKETY_ASSIST_CF_SAAS_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate the complete audit query set and crypto envelope
+        run: node --test .github/scripts/starpips-full-credit-audit.test.mjs
+
+      - name: Require audit credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${CLOUDFLARE_ACCOUNT_ID:-}" =~ ^[a-fA-F0-9]{32}$ ]] || { echo 'CLOUDFLARE_ACCOUNT_ID is required'; exit 1; }
+          [[ -n "${CLOUDFLARE_API_TOKEN:-}" || -n "${MKETY_ASSIST_CF_SAAS_TOKEN:-}" ]] || { echo 'An existing Cloudflare D1 token is required'; exit 1; }
+          echo 'Audit scope is fixed to all Starpips history; no production writes or deployment steps are present.'
+
+      - name: Resolve the existing production D1 database
+        id: d1
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database?name=mkety-assist-prod"
+          token="${CLOUDFLARE_API_TOKEN:-}"
+          source=primary
+          response="$(curl --fail-with-body --silent --show-error "$endpoint" -H "Authorization: Bearer $token" 2>/dev/null || true)"
+          if ! RESPONSE="$response" node -e 'const d=JSON.parse(process.env.RESPONSE||"{}");process.exit(d.success&&d.result?.length===1?0:1)'; then
+            token="$MKETY_ASSIST_CF_SAAS_TOKEN"
+            source=saas
+            response="$(curl --fail-with-body --silent --show-error "$endpoint" -H "Authorization: Bearer $token" 2>/dev/null || true)"
+            RESPONSE="$response" node -e 'const d=JSON.parse(process.env.RESPONSE||"{}");if(!d.success||d.result?.length!==1)process.exit(1)'
+          fi
+          d1_id="$(RESPONSE="$response" node -e 'const d=JSON.parse(process.env.RESPONSE);process.stdout.write(d.result[0].uuid)')"
+          [[ "$d1_id" =~ ^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$ ]] || { echo 'Cloudflare returned an invalid D1 id'; exit 1; }
+          echo "database_id=$d1_id" >> "$GITHUB_OUTPUT"
+          echo "token_source=$source" >> "$GITHUB_OUTPUT"
+
+      - name: Run full-history read-only audit and encrypt report
+        env:
+          AUDIT_DATABASE_ID: ${{ steps.d1.outputs.database_id }}
+          D1_TOKEN_SOURCE: ${{ steps.d1.outputs.token_source }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$D1_TOKEN_SOURCE" == saas ]]; then export CLOUDFLARE_API_TOKEN="$MKETY_ASSIST_CF_SAAS_TOKEN"; fi
+          node .github/scripts/starpips-full-credit-audit.mjs
+
+      - name: Upload encrypted audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: starpips-assist-full-credit-audit-${{ github.run_id }}
+          path: starpips-assist-full-credit-audit.enc.json
+          if-no-files-found: error
+          retention-days: 1
