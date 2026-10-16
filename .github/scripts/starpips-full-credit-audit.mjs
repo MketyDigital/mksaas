@@ -12,7 +12,7 @@ const since = "unixepoch('now','-15 minutes')";
 const query = (name, sql) => ({ name, sql: sql.trim(), params: [] });
 
 export function buildFullCreditAuditQueries() {
-  const candidates = [
+  return [
     query("customer_account", `
       SELECT c.id AS customer_id,c.slug,c.status,a.balance,a.lifetime_granted,a.lifetime_consumed,
         cp.included_credits,cp.rate_multiplier_bps,cp.media_rate_multiplier_bps,
@@ -23,6 +23,7 @@ export function buildFullCreditAuditQueries() {
       LEFT JOIN commercial_policy cp ON cp.customer_id=c.id
       LEFT JOIN raw_model_api_settings s ON s.customer_id=c.id
       WHERE lower(c.slug)='${CUSTOMER_SLUG}'
+    
     `),
     query("required_migrations", `
       SELECT name AS migration_name,applied_at FROM d1_migrations
@@ -32,83 +33,42 @@ export function buildFullCreditAuditQueries() {
         '0042_provider_base_media_pricing.sql','0043_media_voice_rate_multiplier.sql',
         '0044_gpt6_luna_primary_remove_sol.sql'
       ) ORDER BY name
-    `),
-    query("all_credit_ledger_by_day_and_kind", `
-      SELECT date(created_at,'unixepoch') AS day,COALESCE(kind,'(null)') AS kind,
-        COALESCE(workload_type,'(null)') AS workload_type,COUNT(*) AS entries,
-        SUM(delta) AS net_delta_atoms,
-        SUM(CASE WHEN delta<0 THEN -delta ELSE 0 END) AS debit_atoms,
-        SUM(CASE WHEN delta>0 THEN delta ELSE 0 END) AS credit_atoms
-      FROM credit_ledger WHERE customer_id=${customerId}
-      GROUP BY day,kind,workload_type ORDER BY day,kind,workload_type
+    
     `),
     query("all_credit_ledger_details", `
       SELECT id AS ledger_id,assistant_id,workload_type,workload_id,
         substr(COALESCE(workload_id,''),1,6)||'…'||substr(COALESCE(workload_id,''),-4) AS workload_id_masked,
         delta,kind,reference_id,balance_after,created_at
       FROM credit_ledger WHERE customer_id=${customerId} ORDER BY created_at,id
-    `),
-    query("account_vs_all_ledger", `
-      SELECT a.balance,a.lifetime_granted,a.lifetime_consumed,
-        COALESCE(SUM(l.delta),0) AS all_time_ledger_delta_atoms,
-        a.balance-COALESCE(SUM(l.delta),0) AS balance_minus_ledger_delta_atoms,
-        COUNT(l.id) AS ledger_rows
-      FROM credit_accounts a LEFT JOIN credit_ledger l ON l.customer_id=a.customer_id
-      WHERE a.customer_id=${customerId} GROUP BY a.customer_id
-    `),
-    query("assistant_reservations_by_status", `
-      SELECT status,COUNT(*) AS reservations,SUM(reserved_credits) AS reserved_atoms,
-        SUM(COALESCE(settled_credits,0)) AS settled_atoms,
-        MIN(created_at) AS oldest_created_at,MAX(created_at) AS newest_created_at
-      FROM credit_reservations WHERE customer_id=${customerId} GROUP BY status ORDER BY status
+    
     `),
     query("assistant_reservation_details", `
       SELECT id AS reservation_id,assistant_id,reserved_credits,status,settled_credits,created_at
       FROM credit_reservations WHERE customer_id=${customerId} ORDER BY created_at,id
+    
     `),
     query("assistant_attempt_details", `
       SELECT attempt_id,assistant_id,reservation_id,reply_job_id,model_alias,media_kind,provider,model,status,
         started_at,updated_at,input_units,output_units,reasoning_units,image_units,audio_seconds,
         provider_cost_micros,requested_reasoning_mode,applied_reasoning_mode,resolved_at
       FROM inference_attempt_index WHERE customer_id=${customerId} ORDER BY started_at,attempt_id
+    
     `),
-    query("assistant_usage_by_day_and_route", `
-      SELECT date(created_at,'unixepoch') AS day,COALESCE(provider,'unknown') AS provider,
-        COALESCE(provider_model,'unknown') AS provider_model,COALESCE(model_alias,'unknown') AS model_alias,
-        COUNT(*) AS calls,SUM(input_units) AS input_units,SUM(output_units) AS output_units,
-        SUM(reasoning_units) AS reasoning_units,SUM(credits_charged) AS credits_atoms,
-        SUM(provider_cost_micros) AS provider_cost_micros
-      FROM usage_events WHERE customer_id=${customerId}
-      GROUP BY day,provider,provider_model,model_alias ORDER BY day,credits_atoms DESC
-    `),
-    query("raw_api_reservations_by_status", `
-      SELECT status,COUNT(*) AS reservations,SUM(reserved_credits) AS reserved_atoms,
-        SUM(COALESCE(settled_credits,0)) AS settled_atoms,
-        MIN(created_at) AS oldest_created_at,MAX(created_at) AS newest_created_at,
-        SUM(CASE WHEN status='open' AND created_at<${since} THEN 1 ELSE 0 END) AS stale_open_reservations
-      FROM raw_model_reservations WHERE customer_id=${customerId} GROUP BY status ORDER BY status
-    `),
-    query("raw_api_reservations_by_day", `
-      SELECT date(created_at,'unixepoch') AS day,status,COUNT(*) AS reservations,
-        SUM(reserved_credits) AS reserved_atoms,SUM(COALESCE(settled_credits,0)) AS settled_atoms
-      FROM raw_model_reservations WHERE customer_id=${customerId}
-      GROUP BY day,status ORDER BY day,status
+    query("all_usage_event_details", `
+      SELECT id AS usage_event_id,assistant_id,workload_type,workload_id,
+        substr(COALESCE(workload_id,''),1,6)||'…'||substr(COALESCE(workload_id,''),-4) AS workload_id_masked,
+        reservation_id,provider_attempt_id,model_alias,provider,provider_model,input_units,output_units,
+        reasoning_units,requested_reasoning_mode,applied_reasoning_mode,credits_charged,
+        provider_cost_micros,created_at
+      FROM usage_events WHERE customer_id=${customerId} ORDER BY created_at,id
+    
     `),
     query("raw_api_reservation_details", `
       SELECT id AS reservation_id,api_key_id,reserved_credits,status,settled_credits,
         created_at,settled_at,(idempotency_key IS NOT NULL) AS has_idempotency_key,
         (resolution_token IS NOT NULL) AS has_resolution_token
       FROM raw_model_reservations WHERE customer_id=${customerId} ORDER BY created_at,id
-    `),
-    query("raw_api_attempts_by_day_route_status", `
-      SELECT date(started_at,'unixepoch') AS day,COALESCE(provider,'unknown') AS provider,
-        COALESCE(model,'unknown') AS provider_model,COALESCE(model_alias,'unknown') AS model_alias,
-        status,COUNT(*) AS attempts,SUM(COALESCE(input_units,0)) AS input_units,
-        SUM(COALESCE(output_units,0)) AS output_units,SUM(COALESCE(reasoning_units,0)) AS reasoning_units,
-        SUM(COALESCE(provider_cost_micros,0)) AS provider_cost_micros,
-        MIN(updated_at) AS oldest_updated_at,MAX(updated_at) AS newest_updated_at
-      FROM workload_inference_attempt_index WHERE customer_id=${customerId}
-      GROUP BY day,provider,provider_model,model_alias,status ORDER BY day,attempts DESC
+    
     `),
     query("raw_api_attempt_details", `
       SELECT attempt_id,reservation_id,workload_id,substr(workload_id,1,6)||'…'||substr(workload_id,-4) AS workload_id_masked,
@@ -118,226 +78,25 @@ export function buildFullCreditAuditQueries() {
         length(resolution_usage_json) AS resolution_usage_json_length,
         (resolution_idempotency_key IS NOT NULL) AS has_resolution_idempotency_key,resolved_at
       FROM workload_inference_attempt_index WHERE customer_id=${customerId} ORDER BY started_at,attempt_id
-    `),
-    query("raw_api_settlements_by_status", `
-      SELECT status,COUNT(*) AS settlements,SUM(actual_credits) AS actual_credit_atoms,
-        MIN(created_at) AS oldest_created_at,MAX(created_at) AS newest_created_at,
-        MAX(applied_at) AS newest_applied_at
-      FROM raw_model_settlements WHERE customer_id=${customerId} GROUP BY status ORDER BY status
+    
     `),
     query("raw_api_settlement_details", `
       SELECT reservation_id,customer_id,api_key_id,status,actual_credits,created_at,applied_at
       FROM raw_model_settlements WHERE customer_id=${customerId} ORDER BY created_at,reservation_id
-    `),
-    query("all_usage_by_day_workload_route", `
-      SELECT date(created_at,'unixepoch') AS day,COALESCE(workload_type,'assistant') AS workload_type,
-        COALESCE(provider,'unknown') AS provider,COALESCE(provider_model,'unknown') AS provider_model,
-        COALESCE(model_alias,'unknown') AS model_alias,COUNT(*) AS usage_rows,
-        SUM(COALESCE(input_units,0)) AS input_units,SUM(COALESCE(output_units,0)) AS output_units,
-        SUM(COALESCE(reasoning_units,0)) AS reasoning_units,SUM(COALESCE(credits_charged,0)) AS credits_atoms,
-        SUM(COALESCE(provider_cost_micros,0)) AS provider_cost_micros,
-        SUM(CASE WHEN provider_attempt_id IS NULL THEN 1 ELSE 0 END) AS rows_without_provider_attempt_id
-      FROM usage_events WHERE customer_id=${customerId}
-      GROUP BY day,workload_type,provider,provider_model,model_alias ORDER BY day,credits_atoms DESC
-    `),
-    query("all_usage_event_details", `
-      SELECT id AS usage_event_id,assistant_id,workload_type,workload_id,
-        substr(COALESCE(workload_id,''),1,6)||'…'||substr(COALESCE(workload_id,''),-4) AS workload_id_masked,
-        reservation_id,provider_attempt_id,model_alias,provider,provider_model,input_units,output_units,
-        reasoning_units,requested_reasoning_mode,applied_reasoning_mode,credits_charged,
-        provider_cost_micros,created_at
-      FROM usage_events WHERE customer_id=${customerId} ORDER BY created_at,id
-    `),
-    query("raw_api_usage_event_details", `
-      SELECT id AS usage_event_id,reservation_id,provider_attempt_id,model_alias,provider,provider_model,
-        input_units,output_units,reasoning_units,credits_charged,provider_cost_micros,created_at
-      FROM usage_events WHERE customer_id=${customerId} AND workload_type='api_key'
-      ORDER BY created_at,id
-    `),
-    query("provider_costs_by_day_route", `
-      SELECT date(p.created_at,'unixepoch') AS day,COALESCE(p.provider,'unknown') AS provider,
-        COALESCE(p.provider_model,'unknown') AS provider_model,COUNT(*) AS events,
-        SUM(COALESCE(p.cost_micros,0)) AS provider_cost_micros,
-        SUM(CASE WHEN u.id IS NULL THEN 1 ELSE 0 END) AS events_without_usage_row,
-        SUM(CASE WHEN p.provider_attempt_id IS NULL THEN 1 ELSE 0 END) AS events_without_attempt_id
-      FROM provider_cost_events p LEFT JOIN usage_events u ON u.id=p.usage_event_id AND u.customer_id=p.customer_id
-      WHERE p.customer_id=${customerId}
-      GROUP BY date(p.created_at,'unixepoch'),COALESCE(p.provider,'unknown'),COALESCE(p.provider_model,'unknown')
-      ORDER BY day,provider_cost_micros DESC
+    
     `),
     query("all_provider_cost_event_details", `
       SELECT id AS provider_cost_event_id,usage_event_id,provider_attempt_id,provider,provider_model,
         cost_micros,currency,created_at
       FROM provider_cost_events WHERE customer_id=${customerId} ORDER BY created_at,id
-    `),
-    query("raw_api_provider_cost_details", `
-      SELECT p.id AS provider_cost_event_id,p.usage_event_id,p.provider_attempt_id,p.provider,p.provider_model,
-        p.cost_micros,p.currency,p.created_at
-      FROM provider_cost_events p LEFT JOIN usage_events u ON u.id=p.usage_event_id AND u.customer_id=p.customer_id
-      WHERE p.customer_id=${customerId} AND (u.workload_type='api_key' OR u.id IS NULL)
-      ORDER BY p.created_at,p.id
-    `),
-    query("resolution_audit_by_outcome", `
-      SELECT outcome,COUNT(*) AS resolutions,MIN(created_at) AS oldest_created_at,
-        MAX(created_at) AS newest_created_at,
-        SUM(CASE WHEN length(trim(evidence_summary))>0 THEN 1 ELSE 0 END) AS with_evidence,
-        SUM(CASE WHEN length(trim(reason))>0 THEN 1 ELSE 0 END) AS with_reason
-      FROM workload_attempt_resolution_audit WHERE attempt_id IN (
-        SELECT attempt_id FROM workload_inference_attempt_index WHERE customer_id=${customerId}
-      ) GROUP BY outcome ORDER BY outcome
+    
     `),
     query("resolution_audit_details", `
       SELECT a.id AS resolution_audit_id,a.attempt_id,a.outcome,a.evidence_summary,a.reason,
         a.operator_user_id,a.created_at
       FROM workload_attempt_resolution_audit a JOIN workload_inference_attempt_index i ON i.attempt_id=a.attempt_id
       WHERE i.customer_id=${customerId} ORDER BY a.created_at,a.id
-    `),
-    query("reservation_reconciliation_all", `
-      WITH attempts AS (
-        SELECT reservation_id,COUNT(*) AS attempt_count,group_concat(DISTINCT status) AS attempt_statuses,
-          MAX(updated_at) AS latest_attempt_update,MAX(provider_cost_micros) AS max_attempt_cost_micros
-        FROM workload_inference_attempt_index WHERE customer_id=${customerId} GROUP BY reservation_id
-      ), settlements AS (
-        SELECT reservation_id,COUNT(*) AS settlement_count,MAX(actual_credits) AS actual_credits,
-          SUM(CASE WHEN status='applied' THEN 1 ELSE 0 END) AS applied_count,
-          SUM(CASE WHEN status='applying' THEN 1 ELSE 0 END) AS applying_count,MAX(applied_at) AS applied_at
-        FROM raw_model_settlements WHERE customer_id=${customerId} GROUP BY reservation_id
-      ), usage AS (
-        SELECT reservation_id,COUNT(*) AS usage_count,SUM(COALESCE(credits_charged,0)) AS usage_credits,
-          SUM(COALESCE(provider_cost_micros,0)) AS usage_provider_cost_micros
-        FROM usage_events WHERE customer_id=${customerId} AND workload_type='api_key'
-          AND reservation_id IS NOT NULL GROUP BY reservation_id
-      ), ledger AS (
-        SELECT reference_id,COUNT(*) AS ledger_count,SUM(delta) AS ledger_net_delta,
-          SUM(CASE WHEN kind='inference_reserve' THEN 1 ELSE 0 END) AS reserve_count,
-          SUM(CASE WHEN kind='inference_release' THEN 1 ELSE 0 END) AS release_count,
-          SUM(CASE WHEN kind='inference_settlement_refund' THEN 1 ELSE 0 END) AS refund_count
-        FROM credit_ledger WHERE customer_id=${customerId} AND reference_id IS NOT NULL
-        GROUP BY reference_id
-      )
-      SELECT r.id AS reservation_id,r.api_key_id,r.status,r.reserved_credits,r.settled_credits,
-        r.created_at,r.settled_at,COALESCE(a.attempt_count,0) AS attempt_count,a.attempt_statuses,
-        a.latest_attempt_update,COALESCE(s.settlement_count,0) AS settlement_count,
-        COALESCE(s.applied_count,0) AS applied_settlement_count,COALESCE(s.applying_count,0) AS applying_settlement_count,
-        s.actual_credits AS settlement_actual_credits,s.applied_at,
-        COALESCE(u.usage_count,0) AS linked_usage_rows,COALESCE(u.usage_credits,0) AS linked_usage_credit_atoms,
-        COALESCE(u.usage_provider_cost_micros,0) AS linked_provider_cost_micros,
-        COALESCE(l.ledger_count,0) AS ledger_rows,COALESCE(l.ledger_net_delta,0) AS ledger_net_delta_atoms,
-        COALESCE(l.reserve_count,0) AS reserve_ledger_rows,COALESCE(l.release_count,0) AS release_ledger_rows,
-        COALESCE(l.refund_count,0) AS refund_ledger_rows,
-        CASE r.status WHEN 'open' THEN -r.reserved_credits WHEN 'settled' THEN -COALESCE(r.settled_credits,0) ELSE 0 END AS expected_ledger_net_delta_atoms
-      FROM raw_model_reservations r LEFT JOIN attempts a ON a.reservation_id=r.id
-      LEFT JOIN settlements s ON s.reservation_id=r.id LEFT JOIN usage u ON u.reservation_id=r.id
-      LEFT JOIN ledger l ON l.reference_id=r.id
-      WHERE r.customer_id=${customerId} ORDER BY r.created_at,r.id
-    `),
-    query("reservation_integrity_anomalies", `
-      WITH attempts AS (
-        SELECT reservation_id,COUNT(*) AS attempt_count,group_concat(DISTINCT status) AS attempt_statuses,
-          MAX(updated_at) AS latest_attempt_update,
-          SUM(CASE WHEN status IN ('started','unknown_outcome','result_recorded') AND updated_at<${since} THEN 1 ELSE 0 END) AS stale_unresolved_attempts
-        FROM workload_inference_attempt_index WHERE customer_id=${customerId} GROUP BY reservation_id
-      ), settlements AS (
-        SELECT reservation_id,COUNT(*) AS settlement_count,MAX(actual_credits) AS actual_credits,
-          SUM(CASE WHEN status='applied' THEN 1 ELSE 0 END) AS applied_count,
-          SUM(CASE WHEN status='applying' THEN 1 ELSE 0 END) AS applying_count
-        FROM raw_model_settlements WHERE customer_id=${customerId} GROUP BY reservation_id
-      ), usage AS (
-        SELECT reservation_id,COUNT(*) AS usage_count,SUM(COALESCE(credits_charged,0)) AS usage_credits
-        FROM usage_events WHERE customer_id=${customerId} AND workload_type='api_key'
-          AND reservation_id IS NOT NULL GROUP BY reservation_id
-      ), ledger AS (
-        SELECT reference_id,COUNT(*) AS ledger_count,SUM(delta) AS net_delta,
-          SUM(CASE WHEN kind='inference_reserve' THEN 1 ELSE 0 END) AS reserve_count,
-          SUM(CASE WHEN kind='inference_release' THEN 1 ELSE 0 END) AS release_count
-        FROM credit_ledger WHERE customer_id=${customerId} AND reference_id IS NOT NULL GROUP BY reference_id
-      )
-      SELECT r.id AS reservation_id,r.status,r.reserved_credits,r.settled_credits,r.created_at,r.settled_at,
-        COALESCE(a.attempt_count,0) AS attempt_count,a.attempt_statuses,a.latest_attempt_update,
-        COALESCE(a.stale_unresolved_attempts,0) AS stale_unresolved_attempts,
-        COALESCE(s.settlement_count,0) AS settlement_count,COALESCE(s.applied_count,0) AS applied_count,
-        COALESCE(s.applying_count,0) AS applying_count,s.actual_credits,
-        COALESCE(u.usage_count,0) AS usage_count,COALESCE(u.usage_credits,0) AS usage_credits,
-        COALESCE(l.ledger_count,0) AS ledger_count,COALESCE(l.net_delta,0) AS ledger_net_delta,
-        COALESCE(l.reserve_count,0) AS reserve_ledger_count,COALESCE(l.release_count,0) AS release_ledger_count
-      FROM raw_model_reservations r LEFT JOIN attempts a ON a.reservation_id=r.id
-      LEFT JOIN settlements s ON s.reservation_id=r.id LEFT JOIN usage u ON u.reservation_id=r.id
-      LEFT JOIN ledger l ON l.reference_id=r.id
-      WHERE r.customer_id=${customerId} AND (
-        (r.status='open' AND r.created_at<${since}) OR
-        (r.status='open' AND COALESCE(s.settlement_count,0)>0) OR
-        (r.status='settled' AND (COALESCE(s.settlement_count,0)=0 OR COALESCE(s.applied_count,0)=0 OR s.actual_credits!=r.settled_credits)) OR
-        (r.status='settled' AND COALESCE(a.attempt_count,0)=0) OR
-        (r.status='settled' AND (COALESCE(u.usage_count,0)=0 OR COALESCE(u.usage_credits,0)!=COALESCE(r.settled_credits,0))) OR
-        (r.status='released' AND (COALESCE(l.release_count,0)=0 OR COALESCE(s.settlement_count,0)>0)) OR
-        (COALESCE(l.reserve_count,0)=0) OR
-        (COALESCE(l.net_delta,0)!=(CASE r.status WHEN 'open' THEN -r.reserved_credits WHEN 'settled' THEN -COALESCE(r.settled_credits,0) ELSE 0 END)) OR
-        COALESCE(a.stale_unresolved_attempts,0)>0 OR COALESCE(a.attempt_count,0)>1 OR COALESCE(s.applying_count,0)>0
-      ) ORDER BY r.created_at,r.id
-    `),
-    query("attempt_reservation_scope_mismatches", `
-      SELECT i.attempt_id,i.reservation_id,i.status,i.started_at,i.updated_at,
-        r.customer_id AS reservation_customer_id,r.api_key_id AS reservation_api_key_id,
-        substr(i.workload_id,1,6)||'…'||substr(i.workload_id,-4) AS attempt_api_key_id_masked
-      FROM workload_inference_attempt_index i
-      LEFT JOIN raw_model_reservations r ON r.id=i.reservation_id
-      WHERE i.customer_id=${customerId} AND (
-        r.id IS NULL OR r.customer_id!=i.customer_id OR r.api_key_id!=i.workload_id OR i.workload_type!='api_key'
-      ) ORDER BY i.started_at,i.attempt_id
-    `),
-    query("settlement_reservation_scope_mismatches", `
-      SELECT s.reservation_id,s.status,s.actual_credits,s.customer_id AS settlement_customer_id,
-        r.customer_id AS reservation_customer_id,s.api_key_id AS settlement_api_key_id,
-        r.api_key_id AS reservation_api_key_id,s.created_at,s.applied_at
-      FROM raw_model_settlements s LEFT JOIN raw_model_reservations r ON r.id=s.reservation_id
-      WHERE s.customer_id=${customerId} AND (
-        r.id IS NULL OR r.customer_id!=s.customer_id OR r.api_key_id!=s.api_key_id
-      ) ORDER BY s.created_at,s.reservation_id
-    `),
-    query("api_usage_reservation_scope_mismatches", `
-      SELECT u.id AS usage_event_id,u.reservation_id,u.provider_attempt_id,u.credits_charged,
-        u.customer_id AS usage_customer_id,r.customer_id AS reservation_customer_id,
-        u.workload_id AS usage_api_key_id,r.api_key_id AS reservation_api_key_id,u.created_at
-      FROM usage_events u LEFT JOIN raw_model_reservations r ON r.id=u.reservation_id
-      WHERE u.customer_id=${customerId} AND u.workload_type='api_key' AND u.reservation_id IS NOT NULL AND (
-        r.id IS NULL OR r.customer_id!=u.customer_id OR r.api_key_id!=u.workload_id
-      ) ORDER BY u.created_at,u.id
-    `),
-    query("api_ledger_reservation_scope_mismatches", `
-      SELECT l.id AS ledger_id,l.reference_id AS reservation_id,l.kind,l.delta,l.workload_type,
-        l.workload_id AS ledger_api_key_id,r.customer_id AS reservation_customer_id,
-        r.api_key_id AS reservation_api_key_id,l.created_at
-      FROM credit_ledger l LEFT JOIN raw_model_reservations r ON r.id=l.reference_id
-      WHERE l.customer_id=${customerId} AND l.kind IN ('inference_reserve','inference_release','inference_settlement_refund') AND (
-        r.id IS NULL OR l.workload_type!='api_key' OR l.workload_id!=r.api_key_id OR r.customer_id!=l.customer_id
-      ) ORDER BY l.created_at,l.id
-    `),
-    query("provider_cost_usage_mismatches", `
-      SELECT p.id AS provider_cost_event_id,p.usage_event_id,p.provider_attempt_id,
-        p.provider AS cost_provider,u.provider AS usage_provider,
-        p.provider_model AS cost_model,u.provider_model AS usage_model,
-        p.cost_micros,u.provider_cost_micros,p.created_at
-      FROM provider_cost_events p LEFT JOIN usage_events u ON u.id=p.usage_event_id AND u.customer_id=p.customer_id
-      WHERE p.customer_id=${customerId} AND (
-        u.id IS NULL OR p.provider_attempt_id IS NOT u.provider_attempt_id OR
-        p.provider IS NOT u.provider OR p.provider_model IS NOT u.provider_model OR
-        p.cost_micros IS NOT u.provider_cost_micros
-      ) ORDER BY p.created_at,p.id
-    `),
-    query("duplicate_raw_request_groups", `
-      SELECT COUNT(*) AS duplicate_request_groups,COALESCE(SUM(attempts-1),0) AS extra_attempts,
-        MIN(attempts) AS min_attempts_in_group,MAX(attempts) AS max_attempts_in_group
-      FROM (
-        SELECT request_hash,COUNT(*) AS attempts FROM workload_inference_attempt_index
-        WHERE customer_id=${customerId} GROUP BY request_hash HAVING COUNT(*)>1
-      )
-    `),
-    query("usage_provider_attempt_integrity", `
-      SELECT COUNT(*) AS api_usage_rows,COUNT(DISTINCT provider_attempt_id) AS distinct_provider_attempts,
-        SUM(CASE WHEN provider_attempt_id IS NULL THEN 1 ELSE 0 END) AS rows_missing_provider_attempt_id,
-        SUM(CASE WHEN reservation_id IS NULL THEN 1 ELSE 0 END) AS api_usage_rows_missing_reservation_id,
-        SUM(CASE WHEN provider_cost_micros IS NULL THEN 1 ELSE 0 END) AS rows_missing_provider_cost
-      FROM usage_events WHERE customer_id=${customerId} AND workload_type='api_key'
+    
     `),
     query("current_routes_and_rates", `
       SELECT alias,provider,provider_model,enabled,COUNT(*) AS route_targets,MIN(position) AS first_position,
@@ -349,6 +108,7 @@ export function buildFullCreditAuditQueries() {
         MAX(provider_audio_cost_micros_per_minute) AS provider_audio_cost_micros_per_minute
       FROM model_route_targets WHERE customer_id=${customerId} OR customer_id IS NULL
       GROUP BY alias,provider,provider_model,enabled ORDER BY alias,first_position
+    
     `),
     query("model_rate_versions", `
       SELECT alias,version,input_credits_per_million,output_credits_per_million,image_credits,
@@ -356,24 +116,17 @@ export function buildFullCreditAuditQueries() {
         provider_output_cost_micros_per_million,provider_image_cost_micros,
         provider_audio_cost_micros_per_minute,created_at
       FROM model_rates ORDER BY alias,version
+    
     `),
     query("assistant_reply_jobs_by_status_error", `
       SELECT status,COALESCE(last_error,'(none)') AS error_code,COUNT(*) AS jobs,
         MIN(created_at) AS first_created_at,MAX(updated_at) AS last_updated_at,
         SUM(attempts) AS delivery_attempts,SUM(image_count) AS image_count,SUM(audio_seconds) AS audio_seconds
       FROM reply_jobs WHERE customer_id=${customerId} GROUP BY status,error_code ORDER BY jobs DESC LIMIT 200
-    `),
+    
+    `)
   ];
-  const included = new Set([
-    "customer_account","required_migrations","all_credit_ledger_details","assistant_reservation_details",
-    "assistant_attempt_details","all_usage_event_details","raw_api_reservation_details",
-    "raw_api_attempt_details","raw_api_settlement_details","all_provider_cost_event_details",
-    "resolution_audit_details","current_routes_and_rates","model_rate_versions",
-    "assistant_reply_jobs_by_status_error",
-  ]);
-  return candidates.filter((item) => included.has(item.name));
 }
-
 export function assertReadOnlyQueries(queries) {
   if (!Array.isArray(queries) || queries.length < 10) throw new Error("audit_query_set_invalid");
   for (const item of queries) {
