@@ -266,10 +266,22 @@ export function buildAuditSummary(sections, now = Math.floor(Date.now() / 1000))
     (!reservationsById.has(String(event.reservation_id)) ||
       String(reservationsById.get(String(event.reservation_id)).api_key_id) !== String(event.workload_id || "")))
     .map(({ usage_event_id, reservation_id, provider_attempt_id }) => ({ usage_event_id, reservation_id, provider_attempt_id }));
-  const ledgerReservationMismatches = ledger.filter((entry) => ["inference_reserve", "inference_release", "inference_settlement_refund"].includes(entry.kind) &&
-    entry.reference_id && (!reservationsById.has(String(entry.reference_id)) || entry.workload_type !== "api_key" ||
+  const reservationLedgerKinds = new Set(["inference_reserve", "inference_release", "inference_settlement_refund"]);
+  const ledgerMismatchDetails = ({ ledger_id, reference_id, kind, delta, created_at }) =>
+    ({ ledger_id, reference_id, kind, delta, created_at });
+  // API ledger rows must reconcile only against raw_model_reservations. Assistant
+  // reservations use the same inference ledger kinds but live in credit_reservations.
+  const ledgerReservationMismatches = ledger.filter((entry) => entry.workload_type === "api_key" &&
+    reservationLedgerKinds.has(entry.kind) && entry.reference_id &&
+    (!reservationsById.has(String(entry.reference_id)) ||
       String(reservationsById.get(String(entry.reference_id)).api_key_id) !== String(entry.workload_id || "")))
-    .map(({ ledger_id, reference_id, kind, delta, created_at }) => ({ ledger_id, reference_id, kind, delta, created_at }));
+    .map(ledgerMismatchDetails);
+  const assistantReservationsById = new Map(assistantReservations.map((row) => [String(row.reservation_id), row]));
+  const assistantLedgerReservationMismatches = ledger.filter((entry) => entry.workload_type == null &&
+    reservationLedgerKinds.has(entry.kind) && entry.reference_id &&
+    (!assistantReservationsById.has(String(entry.reference_id)) ||
+      (entry.assistant_id && String(assistantReservationsById.get(String(entry.reference_id)).assistant_id || "") !== String(entry.assistant_id))))
+    .map(ledgerMismatchDetails);
   const providerCostMismatches = providerCosts.filter((cost) => {
     const event = usageById.get(String(cost.usage_event_id));
     return !event || String(cost.provider_attempt_id || "") !== String(event.provider_attempt_id || "") ||
@@ -337,6 +349,7 @@ export function buildAuditSummary(sections, now = Math.floor(Date.now() / 1000))
     settlementReservationMismatches,
     usageReservationMismatches,
     ledgerReservationMismatches,
+    assistantLedgerReservationMismatches,
     providerCostMismatches,
     duplicateRequestGroups,
     duplicateProviderAttempts,

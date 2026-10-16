@@ -66,6 +66,32 @@ test("all-time summary checks ledger ties and does not retain request hashes", (
   assert.equal(JSON.stringify(summary).includes("private-hash"), false);
 });
 
+
+test("API ledger reconciliation ignores assistant reservations and detects API-only mismatches", () => {
+  const summary = buildAuditSummary({
+    all_credit_ledger_details: [
+      { ledger_id: "assistant-ledger", reference_id: "res_1", kind: "inference_release", workload_type: null, assistant_id: "ast_1", delta: 0 },
+      { ledger_id: "api-ledger", reference_id: "rres_missing", kind: "inference_reserve", workload_type: "api_key", workload_id: "key_1", delta: 0 },
+    ],
+    assistant_reservation_details: [{ reservation_id: "res_1", assistant_id: "ast_1" }],
+    raw_api_reservation_details: [],
+  }, 1000);
+  assert.equal(summary.ledgerReservationMismatches.length, 1);
+  assert.equal(summary.ledgerReservationMismatches[0].ledger_id, "api-ledger");
+  assert.equal(summary.assistantLedgerReservationMismatches.length, 0);
+});
+
+test("assistant ledger reconciliation detects missing assistant reservations", () => {
+  const summary = buildAuditSummary({
+    all_credit_ledger_details: [
+      { ledger_id: "assistant-orphan", reference_id: "res_missing", kind: "inference_release", workload_type: null, assistant_id: "ast_1", delta: 0 },
+    ],
+    assistant_reservation_details: [],
+  }, 1000);
+  assert.equal(summary.assistantLedgerReservationMismatches.length, 1);
+  assert.equal(summary.assistantLedgerReservationMismatches[0].ledger_id, "assistant-orphan");
+});
+
 test("audit query guard rejects a mutation or multi-statement query", () => {
   const valid = buildFullCreditAuditQueries();
   valid[0].sql = "DELETE FROM raw_model_reservations";
