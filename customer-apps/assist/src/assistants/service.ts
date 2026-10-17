@@ -1,6 +1,21 @@
 export type AssistantReasoningMode = "standard" | "high" | "maximum";
 export type AssistantReasoningFallbackPolicy = "allow_lower_effort" | "strict";
 
+export function normalizeMonthlyCreditCap(value: unknown): number | null {
+  if (value === null || value === "") return null;
+  const mkredits = Number(value);
+  const atoms = Math.round(mkredits * 10000);
+  if (!Number.isFinite(mkredits) || mkredits <= 0 || !Number.isSafeInteger(atoms) || atoms <= 0) {
+    throw new Error("invalid_monthly_credit_cap");
+  }
+  return atoms;
+}
+
+export function normalizeMonthlyCreditCapMode(value: unknown): "soft" | "hard" {
+  if (value === "soft" || value === "hard") return value;
+  throw new Error("invalid_monthly_credit_cap_mode");
+}
+
 export function normalizeReasoningMode(value: unknown): AssistantReasoningMode | null {
   return value === "standard" || value === "high" || value === "maximum" ? value : null;
 }
@@ -16,7 +31,7 @@ export async function recordAssistantVersion(
   userId: string | null,
 ) {
   const assistant = await db.prepare(
-    "SELECT name,status,model_alias,timezone,memory_enabled,monthly_credit_cap,automation_paused,reasoning_mode,reasoning_fallback_policy,current_version,human_delay_enabled,human_delay_min_seconds,human_delay_max_seconds,human_delay_per_char_ms,context_recent_message_limit,context_knowledge_char_budget,context_memory_char_budget FROM assistants WHERE id=? AND customer_id=? AND deleted_at IS NULL LIMIT 1",
+    "SELECT name,status,model_alias,timezone,memory_enabled,monthly_credit_cap,monthly_credit_cap_mode,automation_paused,reasoning_mode,reasoning_fallback_policy,current_version,human_delay_enabled,human_delay_min_seconds,human_delay_max_seconds,human_delay_per_char_ms,context_recent_message_limit,context_knowledge_char_budget,context_memory_char_budget FROM assistants WHERE id=? AND customer_id=? AND deleted_at IS NULL LIMIT 1",
   ).bind(assistantId, customerId).first<any>();
   if (!assistant) throw new Error("assistant_not_found");
   const next = Math.max(1, Number(assistant.current_version || 0) + 1);
@@ -35,6 +50,7 @@ export async function recordAssistantVersion(
         timezone: assistant.timezone,
         memoryEnabled: Boolean(assistant.memory_enabled),
         monthlyCreditCap: assistant.monthly_credit_cap,
+        monthlyCreditCapMode: assistant.monthly_credit_cap_mode,
         reasoningMode: assistant.reasoning_mode || "standard",
         reasoningFallbackPolicy: assistant.reasoning_fallback_policy || "allow_lower_effort",
         automationPaused: Boolean(assistant.automation_paused),
@@ -103,7 +119,7 @@ export async function rollbackAssistantVersion(
   if (!row) throw new Error("assistant_version_not_found");
   const cfg = JSON.parse(row.config_json || "{}");
   await db.prepare(
-    `UPDATE assistants SET name=?,status=?,model_alias=?,timezone=?,memory_enabled=?,monthly_credit_cap=?,automation_paused=?,
+    `UPDATE assistants SET name=?,status=?,model_alias=?,timezone=?,memory_enabled=?,monthly_credit_cap=?,monthly_credit_cap_mode=?,automation_paused=?,
        reasoning_mode=?,reasoning_fallback_policy=?,
        human_delay_enabled=?,human_delay_min_seconds=?,human_delay_max_seconds=?,human_delay_per_char_ms=?,
        context_recent_message_limit=?,context_knowledge_char_budget=?,context_memory_char_budget=?,updated_at=unixepoch()
@@ -115,6 +131,9 @@ export async function rollbackAssistantVersion(
     String(cfg.timezone || "UTC"),
     cfg.memoryEnabled === false ? 0 : 1,
     cfg.monthlyCreditCap == null ? null : Number(cfg.monthlyCreditCap),
+    cfg.monthlyCreditCapMode === "hard" || cfg.monthlyCreditCapMode === "soft"
+      ? cfg.monthlyCreditCapMode
+      : cfg.monthlyCreditCap == null ? "soft" : "hard",
     cfg.automationPaused ? 1 : 0,
     normalizeReasoningMode(cfg.reasoningMode) || "standard",
     normalizeReasoningFallbackPolicy(cfg.reasoningFallbackPolicy) || "allow_lower_effort",

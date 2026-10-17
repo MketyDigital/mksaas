@@ -55,6 +55,12 @@ test("testReasoningModeRoundTripsThroughVersionRollback", async () => {
   assert.ok(/reasoning_fallback_policy=\?/.test(service), "rollback writes fallback policy");
 });
 
+test("legacy assistant version rollback preserves enforcement for positive caps", async () => {
+  const service = await source("src/assistants/service.ts");
+  assert.match(service, /cfg\.monthlyCreditCapMode === "hard" \|\| cfg\.monthlyCreditCapMode === "soft"[\s\S]*?cfg\.monthlyCreditCap == null \? "soft" : "hard"/,
+    "old snapshots with positive caps must remain hard capped; uncapped snapshots remain soft/no-block");
+});
+
 test("testEndUserCannotOverrideOwnerReasoningMode", async () => {
   const route = await assistantApi();
   assert.ok(/if \(parts\.length === 3 && request\.method === "PATCH"\) \{\s*requireAdmin\(session\)/.test(route), "only an authenticated tenant admin can update assistant settings");

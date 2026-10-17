@@ -14,7 +14,7 @@ import { reasoningCapabilities } from "./providers/reasoning";
 import { evaluateMediaReadiness, evaluateRouteReadiness, routeTargetMediaSupported, routeTargetPricingConfigured, routeTargetValidated } from "./providers/route-readiness";
 import { runConversationQualityProbe } from "./conversation/quality-probe";
 import type { SettlementJournal } from "./billing/settlement-journal";
-import { listUnresolvedAttempts, resolveUnknownAttempt, resolveUnknownWorkloadAttempt } from "./billing/reconciliation";
+import { listUnresolvedAttempts, parseAttemptReviewCursor, resolveUnknownAttempt, resolveUnknownWorkloadAttempt, returnUnknownAttemptCredits } from "./billing/reconciliation";
 export { SettlementJournal } from "./billing/settlement-journal";
 
 interface Env {
@@ -669,11 +669,59 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
   }
 
   if (url.pathname === "/api/ops/inference-attempts" && request.method === "GET") {
+    const customerId = String(url.searchParams.get("customerId") || "").trim() || null;
+    const requestedLimit = Number(url.searchParams.get("limit") || 50);
+    const limit = Number.isFinite(requestedLimit) ? Math.min(100, Math.max(1, Math.trunc(requestedLimit))) : 50;
+    const cursor = url.searchParams.get("cursor");
+    if (cursor && cursor.length > 500) return json({ error: "invalid_attempt_review_cursor" }, 400);
+    try { parseAttemptReviewCursor(cursor); } catch { return json({ error: "invalid_attempt_review_cursor" }, 400); }
+    const page = await listUnresolvedAttempts(env.DB, customerId, limit, cursor);
+    return json(page);
+  }
+
+  if (url.pathname === "/api/ops/credit-dispositions" && request.method === "GET") {
+    const customerId = String(url.searchParams.get("customerId") || "").trim() || null;
+    const requestedLimit = Number(url.searchParams.get("limit") || 50);
+    const limit = Number.isFinite(requestedLimit) ? Math.min(100, Math.max(1, Math.trunc(requestedLimit))) : 50;
+    const rows = await env.DB.prepare(
+      `SELECT d.id,d.attempt_id,d.customer_id,c.name AS customer_name,d.workload_type,d.workload_id,d.reservation_id,
+              d.action,d.amount_credits,d.reason,d.evidence_summary,d.operator_user_id,u.email AS operator_email,d.created_at
+       FROM ops_credit_dispositions d JOIN customers c ON c.id=d.customer_id
+       JOIN operator_users u ON u.id=d.operator_user_id
+       WHERE (? IS NULL OR d.customer_id=?) ORDER BY d.created_at DESC,d.id DESC LIMIT ?`,
+    ).bind(customerId, customerId, limit).all<any>();
+    return json({ dispositions: rows.results ?? [] });
+  }
+
+  if (url.pathname.startsWith("/api/ops/inference-attempts/") && url.pathname.endsWith("/history") && request.method === "GET") {
+    const attemptId = decodeURIComponent(url.pathname.slice("/api/ops/inference-attempts/".length, -"/history".length));
     const customerId = requiredString(url.searchParams.get("customerId"), "customerId");
-    const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit") || 50)));
-    const cursorValue = Number(url.searchParams.get("cursor") || 0);
-    const attempts = await listUnresolvedAttempts(env.DB, customerId, limit, cursorValue > 0 ? cursorValue : null);
-    return json({ attempts });
+    const workloadType = url.searchParams.get("workloadType") === "api_key" ? "api_key" : "assistant";
+    const limit = 100;
+    const rows = workloadType === "api_key"
+      ? await env.DB.prepare(
+        `SELECT h.outcome,h.evidence_summary,h.reason,u.email AS operator_email,h.created_at,NULL AS amount_credits
+         FROM workload_attempt_resolution_audit h JOIN operator_users u ON u.id=h.operator_user_id
+         WHERE h.attempt_id=? AND EXISTS(SELECT 1 FROM workload_inference_attempt_index a
+           WHERE a.attempt_id=h.attempt_id AND a.customer_id=? AND a.workload_type='api_key')
+         UNION ALL
+         SELECT 'ops_credit_return',d.evidence_summary,d.reason,u.email,d.created_at,d.amount_credits
+         FROM ops_credit_dispositions d JOIN operator_users u ON u.id=d.operator_user_id
+         WHERE d.attempt_id=? AND d.customer_id=? AND d.workload_type='api_key'
+         ORDER BY created_at DESC LIMIT ?`,
+      ).bind(attemptId,customerId,attemptId,customerId,limit).all<any>()
+      : await env.DB.prepare(
+        `SELECT h.outcome,h.evidence_summary,h.reason,u.email AS operator_email,h.created_at,NULL AS amount_credits
+         FROM inference_attempt_resolution_audit h JOIN operator_users u ON u.id=h.operator_user_id
+         WHERE h.attempt_id=? AND EXISTS(SELECT 1 FROM inference_attempt_index a
+           WHERE a.attempt_id=h.attempt_id AND a.customer_id=?)
+         UNION ALL
+         SELECT 'ops_credit_return',d.evidence_summary,d.reason,u.email,d.created_at,d.amount_credits
+         FROM ops_credit_dispositions d JOIN operator_users u ON u.id=d.operator_user_id
+         WHERE d.attempt_id=? AND d.customer_id=? AND d.workload_type='assistant'
+         ORDER BY created_at DESC LIMIT ?`,
+      ).bind(attemptId,customerId,attemptId,customerId,limit).all<any>();
+    return json({ history: rows.results ?? [] });
   }
 
   if (url.pathname.startsWith("/api/ops/inference-attempts/") && url.pathname.endsWith("/resolve") && request.method === "POST") {
@@ -681,8 +729,26 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     const body = await readJson(request);
     const customerId = requiredString(body.customerId, "customerId");
     const outcome = String(body.outcome || "");
-    if (!["confirmed_not_submitted", "recovered_result", "provider_charged_no_result", "mkety_absorbed_cost", "unresolved"].includes(outcome)) {
+    if (!["confirmed_not_submitted", "recovered_result", "provider_charged_no_result", "mkety_absorbed_cost", "unresolved", "ops_credit_return"].includes(outcome)) {
       return json({ error: "invalid_resolution_outcome" }, 400);
+    }
+    if (outcome === "ops_credit_return") {
+      const workloadType = body.workloadType === "api_key" ? "api_key" : "assistant";
+      const workloadId = requiredString(workloadType === "api_key" ? body.workloadId : body.assistantId, workloadType === "api_key" ? "workloadId" : "assistantId");
+      const result = await returnUnknownAttemptCredits(env.DB, env.SETTLEMENT_JOURNAL, {
+        attemptId, customerId, workloadType, workloadId, operatorUserId: operator.operatorUserId,
+        idempotencyKey: requiredString(body.idempotencyKey, "idempotencyKey"),
+        evidenceSummary: requiredString(body.evidenceSummary, "evidenceSummary"),
+        reason: requiredString(body.reason, "reason"),
+      });
+      if (result.replyJobId) {
+        const now = unix();
+        await env.DB.prepare(
+          "UPDATE reply_jobs SET response_text=?,status='retry',due_at=?,last_enqueued_at=NULL,locked_at=NULL,updated_at=? WHERE id=? AND customer_id=? AND status!='delivered'",
+        ).bind("I couldn’t recover the answer. Please send your message again.", now, now, result.replyJobId, customerId).run();
+        await env.REPLY_QUEUE.send({ jobId: result.replyJobId });
+      }
+      return json({ outcome: result.outcome, returnedCredits: result.returnedCredits, idempotent: result.idempotent });
     }
     if (body.workloadType === "api_key") {
       const workloadId = requiredString(body.workloadId, "workloadId");
@@ -2395,7 +2461,7 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
 
   if (url.pathname === "/api/assistants" && request.method === "GET") {
     const rows = await env.DB.prepare(
-      "SELECT id,name,slug,status,model_alias,timezone,memory_enabled,monthly_credit_cap,automation_paused,archived_at,current_version FROM assistants WHERE customer_id=? AND deleted_at IS NULL ORDER BY created_at DESC",
+      "SELECT id,name,slug,status,model_alias,timezone,memory_enabled,monthly_credit_cap,monthly_credit_cap_mode,automation_paused,archived_at,current_version FROM assistants WHERE customer_id=? AND deleted_at IS NULL ORDER BY created_at DESC",
     ).bind(customer.customerId).all<any>();
     return json({ assistants: (rows.results ?? []).map((row: any) => ({
       ...row,

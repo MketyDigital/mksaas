@@ -9,6 +9,7 @@ const [runtime, settlementSource, migration21, migration34] = await Promise.all(
   readFile(new URL("../migrations/0021_metering_invariants.sql", import.meta.url), "utf8"),
   readFile(new URL("../migrations/0034_idempotent_inference_attempts.sql", import.meta.url), "utf8"),
 ]);
+const assistantService = await readFile(new URL("../src/assistants/service.ts", import.meta.url), "utf8");
 const settlement = settlementSource.slice(settlementSource.indexOf("export async function settleInference"));
 const release = settlementSource.slice(settlementSource.indexOf("export async function releaseInferenceReservation"), settlementSource.indexOf("export async function settleInference"));
 
@@ -56,4 +57,23 @@ test("testReasoningUnitsUseConfiguredRate", () => {
     inputUnits: 0, outputUnits: 1_000_000, reasoningUnits: 1_000_000,
     inputCreditsPerMillion: 0, outputCreditsPerMillion: 3,
   }), 3, "reported reasoning tokens already included in output are not charged twice");
+});
+
+test("testHardCapIncludesOpenReservationsInsideReservationTransaction", async () => {
+  const migration = await readFile(new URL("../migrations/0045_assist_ops_credit_review_and_cap_policy.sql", import.meta.url), "utf8");
+  assert.match(migration, /monthly_credit_cap_mode/);
+  assert.match(migration, /UPDATE assistants SET monthly_credit_cap=NULL WHERE monthly_credit_cap=0/);
+  assert.match(settlementSource, /monthly_credit_cap_mode!='hard'/);
+  assert.match(settlementSource, /credit_reservations[\s\S]*status='open'/);
+  assert.match(settlementSource, /usage_events[\s\S]*credits_charged/);
+  assert.match(settlementSource, /UPDATE credit_accounts[\s\S]*monthly_credit_cap_mode!='hard'/);
+});
+
+test("testNoCapCanBeExplicitlyClearedAndModesAreValidated", async () => {
+  const migration = await readFile(new URL("../migrations/0045_assist_ops_credit_review_and_cap_policy.sql", import.meta.url), "utf8");
+  assert.match(migration, /monthly_credit_cap_mode/);
+  assert.match(assistantService, /invalid_monthly_credit_cap/);
+  assert.match(assistantService, /invalid_monthly_credit_cap_mode/);
+  assert.match(runtime, /monthly_credit_cap=CASE WHEN/);
+  assert.match(runtime, /monthly_credit_cap_mode=CASE WHEN/);
 });
