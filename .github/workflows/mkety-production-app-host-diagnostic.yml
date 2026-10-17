@@ -74,6 +74,23 @@ jobs:
           process.stdout.write(JSON.stringify(result,null,2));
           NODE
 
+      - name: Probe app and public health paths without redirects
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe() {
+            label="$1"
+            url="$2"
+            headers="/tmp/probe-$label.headers"
+            code="$(curl -sS --connect-timeout 8 --max-time 35 -D "$headers" -o /dev/null -w '%{http_code}' "$url" || true)"
+            ray="$(awk 'BEGIN{IGNORECASE=1} /^cf-ray:/ {sub(/^[^:]*:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit}' "$headers")"
+            printf '%s HTTP %s cf-ray=%s\n' "$label" "$code" "${ray:-none}"
+          }
+          probe app-login 'https://app.mkety.com/login'
+          probe app-health 'https://app.mkety.com/api/health'
+          probe public-home 'https://mkety.com/'
+          probe public-mail 'https://mkety.com/mail'
+
       - name: Publish current production readiness evidence
         shell: bash
         run: |
