@@ -41,6 +41,69 @@ jobs:
           }));
           NODE
 
+      - name: Verify repository Cloudflare token can read the Mail zone and sending config
+        shell: bash
+        run: |
+          set -euo pipefail
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Accept: application/json')
+
+          probe() {
+            label="$1"
+            path="$2"
+            output="$3"
+            code="$(curl --connect-timeout 5 --max-time 20 -sS -o "$output" -w '%{http_code}' "${auth[@]}" "$api$path" || true)"
+            FILE="$output" LABEL="$label" HTTP_STATUS="$code" node <<'NODE'
+          const fs=require('node:fs');
+          let body={};
+          try { body=JSON.parse(fs.readFileSync(process.env.FILE,'utf8')); } catch {}
+          const codes=Array.isArray(body.errors)?body.errors.map(x=>x?.code).filter(Number.isInteger):[];
+          const out={event:'mail_cloudflare_repo_credential_probe',check:process.env.LABEL,http_status:Number(process.env.HTTP_STATUS),success:body.success===true,error_codes:codes};
+          if(process.env.LABEL==='token_verify'&&body.result?.status) out.token_status=String(body.result.status);
+          console.log(JSON.stringify(out));
+          NODE
+          }
+
+          probe token_verify '/user/tokens/verify' /tmp/cf-token-verify.json
+          probe zone_lookup '/zones?name=mkety.com&status=active&per_page=10' /tmp/cf-zone.json
+
+          zone_id="$(node <<'NODE'
+          const fs=require('node:fs');
+          try {
+            const x=JSON.parse(fs.readFileSync('/tmp/cf-zone.json','utf8'));
+            const rows=Array.isArray(x.result)?x.result.filter(z=>z.name==='mkety.com'&&z.status==='active'):[];
+            if(x.success===true&&rows.length===1&&typeof rows[0].id==='string') process.stdout.write(rows[0].id);
+          } catch {}
+          NODE
+          )"
+
+          if [ -n "$zone_id" ]; then
+            encoded_zone="$(node -e "process.stdout.write(encodeURIComponent(process.argv[1]))" "$zone_id")"
+            probe dns_records_read "/zones/$encoded_zone/dns_records?per_page=1" /tmp/cf-dns-read.json
+            probe email_sending_read "/zones/$encoded_zone/email/sending/subdomains?per_page=100" /tmp/cf-sending-read.json
+
+            subdomain_id="$(ZONE_FILE=/tmp/cf-sending-read.json node <<'NODE'
+          const fs=require('node:fs');
+          try {
+            const x=JSON.parse(fs.readFileSync(process.env.ZONE_FILE,'utf8'));
+            const rows=Array.isArray(x.result)?x.result.filter(v=>v.name==='mkety.com'):[];
+            if(x.success===true&&rows.length===1&&typeof rows[0].id==='string') process.stdout.write(rows[0].id);
+          } catch {}
+          NODE
+          )"
+
+            if [ -n "$subdomain_id" ]; then
+              encoded_subdomain="$(node -e "process.stdout.write(encodeURIComponent(process.argv[1]))" "$subdomain_id")"
+              probe email_sending_dns_read "/zones/$encoded_zone/email/sending/subdomains/$encoded_subdomain/dns" /tmp/cf-sending-dns-read.json
+            else
+              echo '{"event":"mail_cloudflare_repo_credential_probe","check":"email_sending_dns_read","skipped":"mkety.com sending subdomain not returned"}'
+            fi
+
+            probe event_subscriptions_read "/accounts/$CLOUDFLARE_ACCOUNT_ID/event_subscriptions/subscriptions?per_page=100" /tmp/cf-events-read.json
+          else
+            echo '{"event":"mail_cloudflare_repo_credential_probe","check":"zone_scoped_checks","skipped":"active mkety.com zone not uniquely returned"}'
+          fi
+
       - name: Tail only safe Mail domain setup failures
         shell: bash
         run: |
