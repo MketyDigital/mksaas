@@ -60,6 +60,24 @@ jobs:
           const codes=Array.isArray(body.errors)?body.errors.map(x=>x?.code).filter(Number.isInteger):[];
           const out={event:'mail_cloudflare_repo_credential_probe',check:process.env.LABEL,http_status:Number(process.env.HTTP_STATUS),success:body.success===true,error_codes:codes};
           if(process.env.LABEL==='token_verify'&&body.result?.status) out.token_status=String(body.result.status);
+          const rows=Array.isArray(body.result)?body.result:Array.isArray(body.result?.records)?body.result.records:[];
+          if(process.env.LABEL==='email_routing_read'&&body.result&&typeof body.result==='object') {
+            out.routing_enabled=body.result.enabled===true;
+            if(typeof body.result.status==='string'&&/^[a-z_]{1,30}$/i.test(body.result.status)) out.routing_status=body.result.status;
+          }
+          if(['email_routing_dns_read','mail_subdomain_dns_read'].includes(process.env.LABEL)) {
+            const safe=rows.filter(x=>x&&typeof x==='object').map(x=>({type:typeof x.type==='string'&&/^[A-Z]{1,8}$/.test(x.type)?x.type:undefined,name:typeof x.name==='string'&&/^[a-z0-9._-]{1,253}$/i.test(x.name)?x.name:undefined})).filter(x=>x.type||x.name);
+            out.records=safe.slice(0,30);
+            out.record_count=rows.length;
+          }
+          if(process.env.LABEL==='email_sending_read') {
+            const target=rows.find(x=>x?.name==='mail.mkety.com');
+            out.mail_subdomain_sending_present=Boolean(target);
+            if(target) {
+              out.mail_subdomain_sending_enabled=target.enabled===true;
+              if(typeof target.status==='string'&&/^[a-z_]{1,30}$/i.test(target.status)) out.mail_subdomain_sending_status=target.status;
+            }
+          }
           console.log(JSON.stringify(out));
           NODE
           }
@@ -80,6 +98,9 @@ jobs:
           if [ -n "$zone_id" ]; then
             encoded_zone="$(node -e "process.stdout.write(encodeURIComponent(process.argv[1]))" "$zone_id")"
             probe dns_records_read "/zones/$encoded_zone/dns_records?per_page=1" /tmp/cf-dns-read.json
+            probe mail_subdomain_dns_read "/zones/$encoded_zone/dns_records?name=mail.mkety.com&per_page=100" /tmp/cf-mail-dns-read.json
+            probe email_routing_read "/zones/$encoded_zone/email/routing" /tmp/cf-routing-read.json
+            probe email_routing_dns_read "/zones/$encoded_zone/email/routing/dns" /tmp/cf-routing-dns-read.json
             probe email_sending_read "/zones/$encoded_zone/email/sending/subdomains?per_page=100" /tmp/cf-sending-read.json
 
             subdomain_id="$(ZONE_FILE=/tmp/cf-sending-read.json node <<'NODE'
