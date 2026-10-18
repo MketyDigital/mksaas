@@ -205,7 +205,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          timeout --signal=INT --kill-after=5s 15s npx --yes wrangler@4.129.0 tail mkety-app-host --format=json |
+          timeout --signal=INT --kill-after=5s 45s npx --yes wrangler@4.129.0 tail mkety-app-host --format=json |
             node --input-type=module -e '
               import { createInterface } from "node:readline";
               const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
