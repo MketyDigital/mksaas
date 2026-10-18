@@ -140,6 +140,24 @@ jobs:
               rl.on("line", line => {
                 let record;
                 try { record = JSON.parse(line); } catch { return; }
+                const request = record?.event?.request ?? record?.request;
+                if (request?.method === "POST" && typeof request.url === "string") {
+                  let pathname = "";
+                  try { pathname = new URL(request.url).pathname; } catch {}
+                  if (pathname === "/app/mkety-ops/mail/domains") {
+                    const response = record?.event?.response ?? record?.response ?? {};
+                    const metadata = record?.$metadata ?? {};
+                    const safe = value => typeof value === "string" && /^[a-f0-9]{16,32}$/i.test(value) ? value : undefined;
+                    process.stdout.write(JSON.stringify({
+                      event: "mail_domain_action_request",
+                      method: "POST",
+                      path: pathname,
+                      status: Number.isInteger(response.status) ? response.status : null,
+                      rayId: safe(metadata.rayId),
+                      traceId: safe(metadata.traceId)
+                    }) + "\\n");
+                  }
+                }
                 const serialized = JSON.stringify(record);
                 const match = prefixes.find(([prefix]) => serialized.includes(prefix));
                 if (!match) return;
