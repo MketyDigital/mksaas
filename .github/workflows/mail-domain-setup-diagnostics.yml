@@ -170,3 +170,58 @@ jobs:
               [ "$status" -eq 124 ] || [ "$status" -eq 130 ] || { echo 'Cloudflare Worker tail or safe log filter failed.'; exit "$status"; }
             }
           echo 'Diagnostic tail ended normally.'
+
+      - name: Query recent Worker events through Observability API (dry run)
+        shell: bash
+        run: |
+          set -euo pipefail
+          now_ms="$(date +%s%3N)"
+          from_ms="$((now_ms - 1800000))"
+          jq -n --argjson from "$from_ms" --argjson to "$now_ms" '{
+            queryId: "mail-domain-action-diagnostic",
+            timeframe: {from: $from, to: $to},
+            parameters: {
+              filters: [
+                {key: "$metadata.service", operation: "eq", type: "string", value: "mkety-app-host"}
+              ],
+              needle: {value: "mail/domains", matchCase: false}
+            },
+            view: "events",
+            dry: true,
+            limit: 100
+          }' > /tmp/mail-observability-query.json
+          code="$(curl --connect-timeout 5 --max-time 40 -sS -o /tmp/mail-observability-result.json -w '%{http_code}' \
+            -X POST "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/observability/telemetry/query" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' \
+            --data-binary @/tmp/mail-observability-query.json || true)"
+          HTTP_STATUS="$code" node <<'NODE'
+          const fs=require('node:fs');
+          let body={};
+          try { body=JSON.parse(fs.readFileSync('/tmp/mail-observability-result.json','utf8')); } catch {}
+          const out={event:'mail_observability_query',http_status:Number(process.env.HTTP_STATUS),success:body.success===true,error_codes:Array.isArray(body.errors)?body.errors.map(e=>e?.code).filter(Number.isInteger):[]};
+          const rows=body.result?.events ?? body.result?.data ?? [];
+          function safeHex(v){return typeof v==='string'&&/^[a-f0-9]{16,32}$/i.test(v)?v:undefined}
+          function safePath(v){try{const p=new URL(v).pathname;return /^\/app\/[a-z0-9-]+\/mail\/domains$/.test(p)||/^\/api\/mail\/(?:domains|migration\/archive\/(?:chunk|complete))$/.test(p)?p:undefined}catch{return undefined}}
+          if(Array.isArray(rows)){
+            out.event_count=rows.length;
+            out.events=rows.slice(0,100).map(row=>{
+              const md=row?.$metadata??{};
+              const w=row?.$workers??{};
+              const req=w?.event?.request??row?.event?.request??w?.request??{};
+              const res=w?.event?.response??row?.event?.response??w?.response??{};
+              const x={};
+              if(typeof md.service==='string'&&/^[a-z0-9-]+$/.test(md.service))x.service=md.service;
+              if(typeof md.trigger==='string'&&/^POST \/app\/[a-z0-9-]+\/mail\/domains$/.test(md.trigger))x.trigger=md.trigger;
+              if(typeof md.stage==='string'&&/^[a-z0-9_]+$/.test(md.stage))x.stage=md.stage;
+              if(typeof md.safeErrorCode==='string'&&/^[a-z0-9_]+$/.test(md.safeErrorCode))x.safeErrorCode=md.safeErrorCode;
+              if(req.method==='POST')x.method='POST';
+              const p=safePath(req.url??req.path);if(p)x.path=p;
+              const status=res.status??w.responseStatus;
+              if(Number.isInteger(status)&&status>=100&&status<=599)x.status=status;
+              const ray=safeHex(md.rayId??w.rayId);if(ray)x.rayId=ray;
+              const trace=safeHex(md.traceId??w.traceId);if(trace)x.traceId=trace;
+              return x;
+            }).filter(x=>x.path||x.trigger||x.stage||x.safeErrorCode);
+          }
+          console.log(JSON.stringify(out));
+          NODE
