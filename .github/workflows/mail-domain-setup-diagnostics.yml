@@ -104,11 +104,30 @@ jobs:
             echo '{"event":"mail_cloudflare_repo_credential_probe","check":"zone_scoped_checks","skipped":"active mkety.com zone not uniquely returned"}'
           fi
 
+      - name: Inspect repository token permission names without exposing token data
+        shell: bash
+        run: |
+          set -euo pipefail
+          token_id="$(node -e "const x=require('/tmp/cf-token-verify.json'); if(typeof x.result?.id==='string') process.stdout.write(x.result.id)")"
+          [ -n "$token_id" ] || { echo '{"event":"mail_token_policy_probe","skipped":"token id unavailable"}'; exit 0; }
+          encoded_id="$(node -e "process.stdout.write(encodeURIComponent(process.argv[1]))" "$token_id")"
+          code="$(curl --connect-timeout 5 --max-time 15 -sS -o /tmp/cf-token-details.json -w '%{http_code}' \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' \
+            "https://api.cloudflare.com/client/v4/user/tokens/$encoded_id" || true)"
+          HTTP_STATUS="$code" node <<'NODE'
+          const fs=require('node:fs');
+          let body={};
+          try { body=JSON.parse(fs.readFileSync('/tmp/cf-token-details.json','utf8')); } catch {}
+          const names=(body.result?.policies??[]).flatMap(p=>p.permission_groups??[]).map(g=>g?.name).filter(x=>typeof x==='string');
+          const out={event:'mail_token_policy_probe',http_status:Number(process.env.HTTP_STATUS),success:body.success===true,error_codes:Array.isArray(body.errors)?body.errors.map(e=>e?.code).filter(Number.isInteger):[],workers_observability_write:names.includes('Workers Observability Write'),zone_settings_write:names.includes('Zone Settings Write'),permission_group_count:names.length};
+          console.log(JSON.stringify(out));
+          NODE
+
       - name: Tail only safe Mail domain setup failures
         shell: bash
         run: |
           set -euo pipefail
-          timeout --signal=INT --kill-after=5s 150s npx --yes wrangler@4.129.0 tail mkety-app-host --format=json |
+          timeout --signal=INT --kill-after=5s 15s npx --yes wrangler@4.129.0 tail mkety-app-host --format=json |
             node --input-type=module -e '
               import { createInterface } from "node:readline";
               const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
