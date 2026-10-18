@@ -193,7 +193,7 @@ jobs:
                 ["[mail-domain-setup] retry started", "mail_domain_setup_retry_started"],
                 ["[vinext] Route handler error", "mail_route_handler_error"]
               ];
-              const safeKeys = ["domain", "stage", "errorName", "httpStatus", "providerCode", "safeErrorCode", "path", "method", "status", "responseStatus", "rayId", "traceId"];
+              const safeKeys = ["domain", "stage", "errorName", "httpStatus", "providerCode", "safeErrorCode", "errorCode", "path", "method", "status", "responseStatus", "rayId", "traceId"];
               function visit(value, output) {
                 if (!value || typeof value !== "object") return;
                 if (Array.isArray(value)) { for (const item of value) visit(item, output); return; }
@@ -209,6 +209,7 @@ jobs:
                     if (key === "errorName" && typeof item === "string" && /^[A-Za-z0-9_]+$/.test(item)) output[key] = item;
                     if ((key === "httpStatus" || key === "providerCode") && Number.isInteger(item)) output[key] = item;
                     if (key === "safeErrorCode" && typeof item === "string" && /^mail_[a-z0-9_]+$/.test(item)) output[key] = item;
+                    if (key === "errorCode" && (typeof item === "string" || Number.isInteger(item)) && /^[a-zA-Z0-9_-]{1,40}$/.test(String(item))) output[key] = String(item);
                   }
                 }
                 for (const item of Object.values(value)) visit(item, output);
@@ -251,16 +252,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          now_ms="$(date +%s%3N)"
-          from_ms="$((now_ms - 1800000))"
-          jq -n --argjson from "$from_ms" --argjson to "$now_ms" '{
-            queryId: "mail-domain-action-diagnostic",
+          from_ms=1792054860000
+          to_ms=1792055100000
+          jq -n --argjson from "$from_ms" --argjson to "$to_ms" '{
+            queryId: "mail-content-r2-incident-diagnostic",
             timeframe: {from: $from, to: $to},
             parameters: {
               filters: [
-                {key: "$metadata.service", operation: "eq", type: "string", value: "mkety-app-host"}
+                {key: "$metadata.service", operation: "eq", type: "string", value: "mkety-mail-content"}
               ],
-              needle: {value: "mail/domains", matchCase: false}
+              needle: {value: "[mail-content] R2 object write failed", matchCase: false}
             },
             view: "events",
             dry: true,
