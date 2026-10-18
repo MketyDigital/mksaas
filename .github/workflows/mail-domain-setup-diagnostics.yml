@@ -150,6 +150,36 @@ jobs:
           }));
           NODE
 
+      - name: Inspect Mail-related Worker observability settings read only
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const account=process.env.CLOUDFLARE_ACCOUNT_ID;
+          const headers={Authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN,Accept:'application/json'};
+          const base='https://api.cloudflare.com/client/v4/accounts/'+encodeURIComponent(account)+'/workers/scripts';
+          const safeName=s=>typeof s==='string'&&/^[a-z0-9-]{1,128}$/.test(s);
+          const get=async url=>{const r=await fetch(url,{headers});let b={};try{b=await r.json()}catch{}return {status:r.status,body:b}};
+          const list=await get(base+'?per_page=100');
+          const rows=Array.isArray(list.body.result)?list.body.result:[];
+          const candidates=rows.map(x=>x?.id??x?.script_name).filter(s=>safeName(s)&&/(mail|domain|app-host)/i.test(s));
+          const out={event:'mail_related_worker_observability_audit',list_http_status:list.status,success:list.body.success===true,worker_count:candidates.length,workers:[]};
+          for(const name of candidates){
+            const item=await get(base+'/'+encodeURIComponent(name)+'/script-settings');
+            const obs=item.body.result?.observability;
+            const logs=obs?.logs;
+            out.workers.push({
+              worker:name,http_status:item.status,success:item.body.success===true,
+              error_codes:Array.isArray(item.body.errors)?item.body.errors.map(e=>e?.code).filter(Number.isInteger):[],
+              observability_enabled:typeof obs?.enabled==='boolean'?obs.enabled:null,
+              logs_enabled:typeof logs?.enabled==='boolean'?logs.enabled:null,
+              invocation_logs_enabled:typeof logs?.invocation_logs==='boolean'?logs.invocation_logs:null,
+              log_persist_enabled:typeof logs?.persist==='boolean'?logs.persist:null
+            });
+          }
+          console.log(JSON.stringify(out));
+          NODE
+
       - name: Tail only safe Mail domain setup failures
         shell: bash
         run: |
@@ -245,6 +275,11 @@ jobs:
           let body={};
           try { body=JSON.parse(fs.readFileSync('/tmp/mail-observability-result.json','utf8')); } catch {}
           const out={event:'mail_observability_query',http_status:Number(process.env.HTTP_STATUS),success:body.success===true,error_codes:Array.isArray(body.errors)?body.errors.map(e=>e?.code).filter(Number.isInteger):[]};
+          out.result_keys=body.result&&typeof body.result==='object'?Object.keys(body.result).filter(k=>/^[a-zA-Z0-9_]{1,40}$/.test(k)).slice(0,30):[];
+          out.result_is_array=Array.isArray(body.result);
+          out.run_status=typeof body.result?.run?.status==='string'?body.result.run.status:undefined;
+          out.run_dry=typeof body.result?.run?.dry==='boolean'?body.result.run.dry:undefined;
+          for(const key of ['events','data','results','invocations','traces','agents']){const v=body.result?.[key];if(Array.isArray(v))out[key+'_count']=v.length;else if(v&&typeof v==='object')out[key+'_keys']=Object.keys(v).filter(k=>/^[a-zA-Z0-9_]{1,40}$/.test(k)).slice(0,20)}
           const rows=body.result?.events ?? body.result?.data ?? [];
           function safeHex(v){return typeof v==='string'&&/^[a-f0-9]{16,32}$/i.test(v)?v:undefined}
           function safePath(v){try{const p=new URL(v).pathname;return /^\/app\/[a-z0-9-]+\/mail\/domains$/.test(p)||/^\/api\/mail\/(?:domains|migration\/archive\/(?:chunk|complete))$/.test(p)?p:undefined}catch{return undefined}}
