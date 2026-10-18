@@ -123,6 +123,33 @@ jobs:
           console.log(JSON.stringify(out));
           NODE
 
+      - name: Read deployed app-host Worker observability settings without exposing secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl --connect-timeout 5 --max-time 20 -sS -o /tmp/mail-worker-settings.json -w '%{http_code}' \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/mkety-app-host/script-settings" || true)"
+          HTTP_STATUS="$code" node <<'NODE'
+          const fs=require('node:fs');
+          let body={};
+          try { body=JSON.parse(fs.readFileSync('/tmp/mail-worker-settings.json','utf8')); } catch {}
+          const obs=body.result?.observability;
+          const logs=obs?.logs;
+          console.log(JSON.stringify({
+            event:'mail_worker_observability_settings',
+            worker:'mkety-app-host',
+            http_status:Number(process.env.HTTP_STATUS),
+            success:body.success===true,
+            error_codes:Array.isArray(body.errors)?body.errors.map(e=>e?.code).filter(Number.isInteger):[],
+            observability_enabled:typeof obs?.enabled==='boolean'?obs.enabled:null,
+            invocation_logs_enabled:typeof logs?.invocation_logs==='boolean'?logs.invocation_logs:null,
+            logs_enabled:typeof logs?.enabled==='boolean'?logs.enabled:null,
+            log_persist_enabled:typeof logs?.persist==='boolean'?logs.persist:null,
+            query_string_redaction:typeof logs?.redact_query_string==='boolean'?logs.redact_query_string:null
+          }));
+          NODE
+
       - name: Tail only safe Mail domain setup failures
         shell: bash
         run: |
