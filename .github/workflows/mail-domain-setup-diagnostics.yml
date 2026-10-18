@@ -275,12 +275,15 @@ jobs:
           let body={};
           try { body=JSON.parse(fs.readFileSync('/tmp/mail-observability-result.json','utf8')); } catch {}
           const out={event:'mail_observability_query',http_status:Number(process.env.HTTP_STATUS),success:body.success===true,error_codes:Array.isArray(body.errors)?body.errors.map(e=>e?.code).filter(Number.isInteger):[]};
+          const eventView=body.result?.events;
+          if(Number.isInteger(eventView?.count))out.event_count=eventView.count;
+          if(Array.isArray(eventView?.fields))out.event_fields=eventView.fields.map(x=>typeof x==='string'?x:x?.key).filter(x=>typeof x==='string'&&/^[a-zA-Z0-9_$.-]{1,80}$/.test(x)).slice(0,80);
           out.result_keys=body.result&&typeof body.result==='object'?Object.keys(body.result).filter(k=>/^[a-zA-Z0-9_]{1,40}$/.test(k)).slice(0,30):[];
           out.result_is_array=Array.isArray(body.result);
           out.run_status=typeof body.result?.run?.status==='string'?body.result.run.status:undefined;
           out.run_dry=typeof body.result?.run?.dry==='boolean'?body.result.run.dry:undefined;
           for(const key of ['events','data','results','invocations','traces','agents']){const v=body.result?.[key];if(Array.isArray(v))out[key+'_count']=v.length;else if(v&&typeof v==='object')out[key+'_keys']=Object.keys(v).filter(k=>/^[a-zA-Z0-9_]{1,40}$/.test(k)).slice(0,20)}
-          const rows=body.result?.events ?? body.result?.data ?? [];
+          const rows=Array.isArray(eventView?.events)?eventView.events:(Array.isArray(body.result?.data)?body.result.data:[]);
           function safeHex(v){return typeof v==='string'&&/^[a-f0-9]{16,32}$/i.test(v)?v:undefined}
           function safePath(v){try{const p=new URL(v).pathname;return /^\/app\/[a-z0-9-]+\/mail\/domains$/.test(p)||/^\/api\/mail\/(?:domains|migration\/archive\/(?:chunk|complete))$/.test(p)?p:undefined}catch{return undefined}}
           if(Array.isArray(rows)){
