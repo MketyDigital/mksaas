@@ -1,0 +1,45 @@
+name: Mail Worker observability settings (read only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Read app-host Worker observability settings without exposing secrets
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || { echo 'Cloudflare API token missing.'; exit 1; }
+          [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ] || { echo 'Cloudflare account ID missing.'; exit 1; }
+          code="$(curl --connect-timeout 5 --max-time 20 -sS -o /tmp/worker-settings.json -w '%{http_code}' \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Accept: application/json' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/mkety-app-host/script-settings" || true)"
+          HTTP_STATUS="$code" node <<'NODE'
+          const fs=require('node:fs');
+          let body={};
+          try { body=JSON.parse(fs.readFileSync('/tmp/worker-settings.json','utf8')); } catch {}
+          const obs=body.result?.observability;
+          const logs=obs?.logs;
+          const out={
+            event:'mail_worker_observability_settings',
+            worker:'mkety-app-host',
+            http_status:Number(process.env.HTTP_STATUS),
+            success:body.success===true,
+            error_codes:Array.isArray(body.errors)?body.errors.map(e=>e?.code).filter(Number.isInteger):[],
+            observability_enabled:typeof obs?.enabled==='boolean'?obs.enabled:null,
+            invocation_logs_enabled:typeof logs?.invocation_logs==='boolean'?logs.invocation_logs:null,
+            logs_enabled:typeof logs?.enabled==='boolean'?logs.enabled:null,
+            log_persist_enabled:typeof logs?.persist==='boolean'?logs.persist:null,
+            query_string_redaction:typeof logs?.redact_query_string==='boolean'?logs.redact_query_string:null
+          };
+          console.log(JSON.stringify(out));
+          NODE
