@@ -77,7 +77,7 @@ export function buildQueueQuery() {
         dimensions { queueID actionType consumerType outcome }
         count sum { billableOperations bytes } avg { lagTime retryCount } max { messageSize }
       }
-      queuesBacklogAdaptiveGroups(limit: 1000, filter: {queueId: $queueId, datetime_geq: $start, datetime_leq: $end}) {
+      queueBacklogAdaptiveGroups(limit: 1000, filter: {queueId: $queueId, datetime_geq: $start, datetime_leq: $end}) {
         dimensions { queueID } avg { messages bytes }
       }
       queueConsumerMetricsAdaptiveGroups(limit: 1000, filter: {queueId: $queueId, datetime_geq: $start, datetime_leq: $end}) {
@@ -103,11 +103,21 @@ export function buildDurableObjectQuery() {
   }`;
 }
 
+export function sanitizeGraphQLError(message) {
+  return String(message || 'graphql_error')
+    .replace(/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}/gi, '[redacted]')
+    .replace(/\b[a-f0-9]{32}\b/gi, '[redacted]')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 180);
+}
+
 function statusError(error) {
   return {
     ok: false,
     status: Number(error?.status || 0) || undefined,
     codes: Array.isArray(error?.codes) ? error.codes.slice(0, 5) : [],
+    details: Array.isArray(error?.details) ? error.details.slice(0, 3).map(sanitizeGraphQLError) : [],
     message: String(error?.message || 'request_failed').replace(/[\r\n]/g, ' ').slice(0, 180),
   };
 }
@@ -142,6 +152,7 @@ async function graph(query, variables, token) {
   if (response.errors?.length) {
     const error = new Error(`graphql_rejected_${query.match(/\bquery\s+(\w+)/)?.[1] || 'audit_query'}`);
     error.codes = response.errors.map((item) => item.extensions?.code).filter(Boolean);
+    error.details = response.errors.map((item) => sanitizeGraphQLError(item.message)).filter(Boolean);
     throw error;
   }
   return response.data?.viewer?.accounts?.[0] || {};
