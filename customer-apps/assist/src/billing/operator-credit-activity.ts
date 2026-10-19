@@ -50,10 +50,13 @@ function conditions(alias: string, filters: QueryInput): { sql: string; values: 
 export function buildCreditActivityQuery(filters: QueryInput): { sql: string; values: Array<string | number> } {
   const streams: string[] = [];
   const values: Array<string | number> = [];
+  // Any row outside each stream's newest offset + page-size rows cannot appear
+  // in the globally ordered page. Bound the union inputs before sorting them.
+  const candidateLimit = filters.offset + filters.limit;
 
   if (filters.type === "all" || filters.type === "credits") {
     const where = conditions("l", filters);
-    streams.push(`SELECT 'credit' AS record_type,l.id,l.customer_id,c.name AS customer_name,
+    streams.push(`SELECT * FROM (SELECT 'credit' AS record_type,l.id,l.customer_id,c.name AS customer_name,
       l.assistant_id,a.name AS assistant_name,l.kind AS event_type,l.delta AS amount,
       l.balance_after,l.reference_id,l.metadata_json,
       NULL AS input_units,NULL AS output_units,NULL AS reasoning_units,
@@ -64,13 +67,14 @@ export function buildCreditActivityQuery(filters: QueryInput): { sql: string; va
       FROM credit_ledger l
       JOIN customers c ON c.id=l.customer_id
       LEFT JOIN assistants a ON a.id=l.assistant_id
-      ${where.sql}${where.sql ? " AND" : " WHERE"} l.kind NOT IN ('topup','plan_funding')`);
-    values.push(...where.values);
+      ${where.sql}${where.sql ? " AND" : " WHERE"} l.kind NOT IN ('topup','plan_funding')
+      ORDER BY l.created_at DESC,l.id DESC LIMIT ?)`);
+    values.push(...where.values, candidateLimit);
   }
 
   if (filters.type === "all" || filters.type === "usage") {
     const where = conditions("u", filters);
-    streams.push(`SELECT 'usage' AS record_type,u.id,u.customer_id,c.name AS customer_name,
+    streams.push(`SELECT * FROM (SELECT 'usage' AS record_type,u.id,u.customer_id,c.name AS customer_name,
       u.assistant_id,a.name AS assistant_name,'inference_usage' AS event_type,-u.credits_charged AS amount,
       NULL AS balance_after,COALESCE(u.reservation_id,u.provider_attempt_id) AS reference_id,NULL AS metadata_json,
       u.input_units,u.output_units,u.reasoning_units,u.requested_reasoning_mode,u.applied_reasoning_mode,
@@ -82,13 +86,14 @@ export function buildCreditActivityQuery(filters: QueryInput): { sql: string; va
       FROM usage_events u
       JOIN customers c ON c.id=u.customer_id
       LEFT JOIN assistants a ON a.id=u.assistant_id
-      ${where.sql}`);
-    values.push(...where.values);
+      ${where.sql}
+      ORDER BY u.created_at DESC,u.id DESC LIMIT ?)`);
+    values.push(...where.values, candidateLimit);
   }
 
   if (filters.type === "all" || filters.type === "payments") {
     const where = conditions("p", filters);
-    streams.push(`SELECT 'payment' AS record_type,p.id,p.customer_id,c.name AS customer_name,
+    streams.push(`SELECT * FROM (SELECT 'payment' AS record_type,p.id,p.customer_id,c.name AS customer_name,
       NULL AS assistant_id,NULL AS assistant_name,p.purchase_type AS event_type,p.credits AS amount,
       l.balance_after,p.reference AS reference_id,NULL AS metadata_json,
       NULL AS input_units,NULL AS output_units,NULL AS reasoning_units,
@@ -99,8 +104,9 @@ export function buildCreditActivityQuery(filters: QueryInput): { sql: string; va
       FROM payment_checkouts p
       JOIN customers c ON c.id=p.customer_id
       LEFT JOIN credit_ledger l ON l.customer_id=p.customer_id AND l.reference_id=p.id AND l.kind IN ('topup','plan_funding')
-      ${where.sql}`);
-    values.push(...where.values);
+      ${where.sql}
+      ORDER BY p.created_at DESC,p.id DESC LIMIT ?)`);
+    values.push(...where.values, candidateLimit);
   }
 
   return {
