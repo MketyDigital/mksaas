@@ -11,6 +11,7 @@ import {
   queueNamesFromConfig,
   redactSql,
   resolveAssistConfigPath,
+  sanitizeGraphQLError,
   validateDays,
 } from './assist_resource_audit.mjs';
 
@@ -28,6 +29,12 @@ test('date-based D1 and DO window includes the selected UTC calendar dates', () 
 test('query signatures are value-redacted and length-bounded', () => {
   assert.equal(redactSql("SELECT token FROM t WHERE id='private' AND n=123"), 'SELECT token FROM t WHERE id=? AND n=?');
   assert.ok(redactSql('x'.repeat(1000)).length <= 500);
+});
+
+test('GraphQL schema errors are bounded and redact account identifiers', () => {
+  const message = sanitizeGraphQLError("Unknown field for account 0123456789abcdef0123456789abcdef");
+  assert.equal(message, 'Unknown field for account [redacted]');
+  assert.ok(sanitizeGraphQLError('x'.repeat(500)).length <= 180);
 });
 
 test('every generated analytics document is a read-only GraphQL query', () => {
@@ -51,7 +58,8 @@ test('Queue analytics filter each Assist queue and aggregate the whole window, i
   assert.match(query, /queueId: \$queueId/);
   assert.match(query, /avg \{ lagTime retryCount \}/);
   assert.match(query, /avg \{ concurrency \}/);
-  assert.doesNotMatch(query, /datetimeHour|datetimeMinute/);
+  assert.match(query, /queueBacklogAdaptiveGroups/);
+  assert.doesNotMatch(query, /queuesBacklogAdaptiveGroups|datetimeHour|datetimeMinute/);
 });
 
 test('Assist config identifies its own Worker, queues and Durable Object without Containers', () => {
