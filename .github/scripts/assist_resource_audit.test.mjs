@@ -50,7 +50,8 @@ test('D1 metrics isolate mkety-assist-prod and surface top read and write signat
   assert.match(query, /topQueriesByRowsRead: d1QueriesAdaptiveGroups/);
   assert.match(query, /topQueriesByRowsWritten: d1QueriesAdaptiveGroups/);
   assert.match(query, /rowsRead rowsWritten/);
-  assert.match(query, /queryBatchTimeMsP99/);
+  assert.match(query, /queryBatchTimeMsP90/);
+  assert.doesNotMatch(query, /sum \{[^}]*queryBatchTimeMs/);
 });
 
 test('Queue analytics filter each Assist queue and aggregate the whole window, including retries and concurrency', () => {
@@ -59,7 +60,16 @@ test('Queue analytics filter each Assist queue and aggregate the whole window, i
   assert.match(query, /avg \{ lagTime retryCount \}/);
   assert.match(query, /avg \{ concurrency \}/);
   assert.match(query, /queueBacklogAdaptiveGroups/);
-  assert.doesNotMatch(query, /queuesBacklogAdaptiveGroups|datetimeHour|datetimeMinute/);
+  assert.doesNotMatch(query, /queuesBacklogAdaptiveGroups|queueID|datetimeHour|datetimeMinute/);
+});
+
+test('Durable Object metrics stay scoped to Assist and avoid unsupported dimensions', () => {
+  const query = buildDurableObjectQuery();
+  assert.match(query, /scriptName: \$scriptName/);
+  assert.match(query, /sum \{ requests responseBodySize \}/);
+  assert.match(query, /sum \{ cpuTime \}/);
+  assert.match(query, /max \{ storedBytes \}/);
+  assert.doesNotMatch(query, /className|namespaceId/);
 });
 
 test('Assist config identifies its own Worker, queues and Durable Object without Containers', () => {
