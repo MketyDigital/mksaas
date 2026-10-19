@@ -21,12 +21,24 @@ test("operator credit activity query is read-only and keeps charge streams disti
   assert.match(query.sql, /FROM credit_ledger/);
   assert.match(query.sql, /FROM usage_events/);
   assert.match(query.sql, /FROM payment_checkouts/);
+  assert.match(query.sql, /ORDER BY l\.created_at DESC,l\.id DESC LIMIT \?/);
+  assert.match(query.sql, /ORDER BY u\.created_at DESC,u\.id DESC LIMIT \?/);
+  assert.match(query.sql, /ORDER BY p\.created_at DESC,p\.id DESC LIMIT \?/);
+  assert.equal((query.sql.match(/LIMIT \?/g) || []).length, 4);
   assert.match(query.sql, /customer_id=\?/);
   assert.match(query.sql, /created_at>=\?/);
   assert.match(query.sql, /created_at<\?/);
   assert.doesNotMatch(query.sql, /INSERT\s+INTO|UPDATE\s+|DELETE\s+FROM/i);
   assert.doesNotMatch(query.sql, /api_key_secret|token_hash|secret_ciphertext|prompt/i);
-  assert.deepEqual(query.values, ["cust_123", 10, 20, "cust_123", 10, 20, "cust_123", 10, 20, 25, 50]);
+  assert.deepEqual(query.values, ["cust_123", 10, 20, 75, "cust_123", 10, 20, 75, "cust_123", 10, 20, 75, 25, 50]);
+});
+
+test("operator credit activity has created-at indexes for bounded global pages", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const migration = await readFile(new URL("../migrations/0048_ops_credit_activity_indexes.sql", import.meta.url), "utf8");
+  assert.match(migration, /idx_ops_credit_ledger_activity\s+ON credit_ledger\(created_at DESC,id DESC\)/);
+  assert.match(migration, /idx_ops_usage_events_activity\s+ON usage_events\(created_at DESC,id DESC\)/);
+  assert.match(migration, /idx_ops_payment_checkouts_activity\s+ON payment_checkouts\(created_at DESC,id DESC\)/);
 });
 
 test("operator credit activity never accepts invalid filters or unbounded pages", () => {

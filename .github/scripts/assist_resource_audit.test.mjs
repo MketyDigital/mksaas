@@ -8,6 +8,7 @@ import {
   buildWorkerQuery,
   calendarStart,
   isReadOnlyGraphQL,
+  matchAssistDurableObjectNamespaces,
   queueNamesFromConfig,
   redactSql,
   resolveAssistConfigPath,
@@ -65,11 +66,26 @@ test('Queue analytics filter each Assist queue and aggregate the whole window, i
 
 test('Durable Object metrics stay scoped to Assist and avoid unsupported dimensions', () => {
   const query = buildDurableObjectQuery();
-  assert.match(query, /scriptName: \$scriptName/);
+  assert.match(query, /namespaceId: \$namespaceId/);
+  assert.doesNotMatch(query, /scriptName: \$scriptName/);
   assert.match(query, /sum \{ requests responseBodySize \}/);
   assert.match(query, /sum \{ cpuTime \}/);
   assert.match(query, /max \{ storedBytes \}/);
-  assert.doesNotMatch(query, /className|namespaceId/);
+  assert.doesNotMatch(query, /className/);
+});
+
+test('Durable Object namespace resolution matches only the configured Assist script and class', () => {
+  const config = { name: 'mkety-assist', durable_objects: { bindings: [{ class_name: 'SettlementJournal' }] } };
+  const resources = [
+    { id: 'wrong-script', script: 'other-worker', class: 'SettlementJournal' },
+    { id: 'wrong-class', script: 'mkety-assist', class: 'OtherClass' },
+    { id: 'assist-journal', script: 'mkety-assist', class: 'SettlementJournal' },
+  ];
+  assert.deepEqual(matchAssistDurableObjectNamespaces(resources, config), [
+    { className: 'SettlementJournal', namespaceId: 'assist-journal' },
+  ]);
+  assert.throws(() => matchAssistDurableObjectNamespaces(resources.slice(0, 2), config), /namespace_not_unique/);
+  assert.throws(() => matchAssistDurableObjectNamespaces([...resources, resources[2]], config), /namespace_not_unique/);
 });
 
 test('Assist config identifies its own Worker, queues and Durable Object without Containers', () => {
@@ -99,3 +115,4 @@ test('workflow only reads secrets in the main-branch manual audit job and runs n
   assert.match(workflow, /CLOUDFLARE_API_TOKEN/);
   assert.match(workflow, /CLOUDFLARE_ACCOUNT_ID/);
 });
+

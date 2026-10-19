@@ -88,15 +88,15 @@ export function buildQueueQuery() {
 }
 
 export function buildDurableObjectQuery() {
-  return `query AssistDurableObjectResourceAudit($accountTag: String!, $scriptName: String!, $start: Date!, $end: Date!) {
+  return `query AssistDurableObjectResourceAudit($accountTag: String!, $namespaceId: String!, $start: Date!, $end: Date!) {
     viewer { accounts(filter: {accountTag: $accountTag}) {
-      durableObjectsInvocationsAdaptiveGroups(limit: 1000, filter: {scriptName: $scriptName, date_geq: $start, date_leq: $end}) {
+      durableObjectsInvocationsAdaptiveGroups(limit: 1000, filter: {namespaceId: $namespaceId, date_geq: $start, date_leq: $end}) {
         sum { requests responseBodySize }
       }
-      durableObjectsPeriodicGroups(limit: 1000, filter: {scriptName: $scriptName, date_geq: $start, date_leq: $end}) {
+      durableObjectsPeriodicGroups(limit: 1000, filter: {namespaceId: $namespaceId, date_geq: $start, date_leq: $end}) {
         sum { cpuTime }
       }
-      durableObjectsStorageGroups(limit: 1000, filter: {scriptName: $scriptName, date_geq: $start, date_leq: $end}) {
+      durableObjectsStorageGroups(limit: 1000, filter: {namespaceId: $namespaceId, date_geq: $start, date_leq: $end}) {
         max { storedBytes }
       }
     } }
@@ -173,6 +173,15 @@ export function queueNamesFromConfig(config) {
   return [...names].sort();
 }
 
+export function matchAssistDurableObjectNamespaces(resources, config) {
+  const bindings = config.durable_objects?.bindings || [];
+  return bindings.map((binding) => {
+    const matches = (resources || []).filter((item) => item.script === config.name && item.class === binding.class_name && item.id);
+    if (matches.length !== 1) throw new Error(`assist_durable_object_namespace_not_unique:${binding.class_name}`);
+    return { className: binding.class_name, namespaceId: matches[0].id };
+  });
+}
+
 async function resolveDatabase(token, account) {
   const response = await restGet(`/accounts/${account}/d1/database?name=mkety-assist-prod&per_page=100`, token);
   const matches = (response.result || []).filter((db) => db.name === 'mkety-assist-prod');
@@ -193,6 +202,11 @@ async function listAssistQueues(token, account, configuredNames) {
     const item = byName.get(name);
     return item ? { name, id: item.queue_id, exists: true } : { name, id: null, exists: false };
   });
+}
+
+async function listAssistDurableObjectNamespaces(token, account, config) {
+  const response = await restGet(`/accounts/${account}/workers/durable_objects/namespaces?per_page=100`, token);
+  return matchAssistDurableObjectNamespaces(response.result || [], config);
 }
 
 function redactMetricQueries(result) {
@@ -223,7 +237,14 @@ export async function runAudit({ token, account, days, configPath = '../../custo
   const [d1Metrics, workerMetrics, durableObjectMetrics] = await Promise.all([
     optional(async () => redactMetricQueries(await graph(buildD1Query(), { accountTag: account, databaseId: db.id, start: startDate, end: endDate }, token))),
     optional(() => graph(buildWorkerQuery(), { accountTag: account, scriptName: config.name, start, end }, token)),
-    optional(() => graph(buildDurableObjectQuery(), { accountTag: account, scriptName: config.name, start: startDate, end: endDate }, token)),
+    optional(async () => {
+      const namespaces = await listAssistDurableObjectNamespaces(token, account, config);
+      const classes = await Promise.all(namespaces.map(async ({ className, namespaceId }) => ({
+        className,
+        analytics: await optional(() => graph(buildDurableObjectQuery(), { accountTag: account, namespaceId, start: startDate, end: endDate }, token)),
+      })));
+      return classes;
+    }),
   ]);
 
   const queueMetrics = {};
@@ -293,3 +314,4 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
     process.exitCode = 1;
   }
 }
+
