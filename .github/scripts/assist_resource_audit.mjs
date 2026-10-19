@@ -42,8 +42,8 @@ export function buildD1Query() {
     viewer { accounts(filter: {accountTag: $accountTag}) {
       d1AnalyticsAdaptiveGroups(limit: 10000, filter: {databaseId: $databaseId, date_geq: $start, date_leq: $end}, orderBy: [date_DESC]) {
         dimensions { date databaseId }
-        sum { readQueries writeQueries rowsRead rowsWritten queryBatchResponseBytes queryBatchTimeMs }
-        quantiles { queryBatchTimeMsP50 queryBatchTimeMsP90 queryBatchTimeMsP99 }
+        sum { readQueries writeQueries rowsRead rowsWritten queryBatchResponseBytes }
+        quantiles { queryBatchTimeMsP90 }
       }
       d1StorageAdaptiveGroups(limit: 10000, filter: {databaseId: $databaseId, date_geq: $start, date_leq: $end}, orderBy: [date_DESC]) {
         dimensions { date databaseId } max { databaseSizeBytes }
@@ -74,14 +74,14 @@ export function buildQueueQuery() {
   return `query AssistQueueResourceAudit($accountTag: String!, $queueId: String!, $start: Time!, $end: Time!) {
     viewer { accounts(filter: {accountTag: $accountTag}) {
       queueMessageOperationsAdaptiveGroups(limit: 1000, filter: {queueId: $queueId, datetime_geq: $start, datetime_leq: $end}) {
-        dimensions { queueID actionType consumerType outcome }
+        dimensions { actionType consumerType outcome }
         count sum { billableOperations bytes } avg { lagTime retryCount } max { messageSize }
       }
       queueBacklogAdaptiveGroups(limit: 1000, filter: {queueId: $queueId, datetime_geq: $start, datetime_leq: $end}) {
-        dimensions { queueID } avg { messages bytes }
+        avg { messages bytes }
       }
       queueConsumerMetricsAdaptiveGroups(limit: 1000, filter: {queueId: $queueId, datetime_geq: $start, datetime_leq: $end}) {
-        dimensions { queueID } avg { concurrency }
+        avg { concurrency }
       }
     } }
   }`;
@@ -91,13 +91,13 @@ export function buildDurableObjectQuery() {
   return `query AssistDurableObjectResourceAudit($accountTag: String!, $scriptName: String!, $start: Date!, $end: Date!) {
     viewer { accounts(filter: {accountTag: $accountTag}) {
       durableObjectsInvocationsAdaptiveGroups(limit: 1000, filter: {scriptName: $scriptName, date_geq: $start, date_leq: $end}) {
-        dimensions { namespaceId className } sum { requests responseBodySize }
+        sum { requests responseBodySize }
       }
       durableObjectsPeriodicGroups(limit: 1000, filter: {scriptName: $scriptName, date_geq: $start, date_leq: $end}) {
-        dimensions { namespaceId className } sum { cpuTime }
+        sum { cpuTime }
       }
       durableObjectsStorageGroups(limit: 1000, filter: {scriptName: $scriptName, date_geq: $start, date_leq: $end}) {
-        dimensions { namespaceId className } max { storedBytes }
+        max { storedBytes }
       }
     } }
   }`;
