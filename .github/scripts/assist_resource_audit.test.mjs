@@ -10,6 +10,7 @@ import {
   isReadOnlyGraphQL,
   queueNamesFromConfig,
   redactSql,
+  resolveAssistConfigPath,
   validateDays,
 } from './assist_resource_audit.mjs';
 
@@ -54,7 +55,9 @@ test('Queue analytics filter each Assist queue and aggregate the whole window, i
 });
 
 test('Assist config identifies its own Worker, queues and Durable Object without Containers', () => {
-  const config = JSON.parse(fs.readFileSync(new URL('../../customer-apps/assist/wrangler.jsonc', import.meta.url), 'utf8'));
+  const configPath = resolveAssistConfigPath();
+  assert.equal(fs.existsSync(configPath), true);
+  const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
   assert.equal(config.name, 'mkety-assist');
   assert.deepEqual(queueNamesFromConfig(config), [
     'mkety-assist-inbound',
@@ -70,7 +73,9 @@ test('workflow only reads secrets in the main-branch manual audit job and runs n
   const workflow = fs.readFileSync(new URL('../workflows/mkety-assist-cloudflare-resource-audit.yml', import.meta.url), 'utf8');
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /github\.ref == 'refs\/heads\/main'/);
-  assert.match(workflow, /if: github\.event_name == 'pull_request'/);
+  assert.match(workflow, /push:/);
+  assert.match(workflow, /if: github\.event_name != 'workflow_dispatch'/);
+  assert.match(workflow, /if: github\.event_name == 'workflow_dispatch' && github\.ref == 'refs\/heads\/main'/);
   assert.match(workflow, /contents: read/);
   assert.doesNotMatch(workflow, /wrangler deploy|d1 execute|queues create|\bDELETE\s+.*cloudflare/i);
   assert.match(workflow, /CLOUDFLARE_API_TOKEN/);
