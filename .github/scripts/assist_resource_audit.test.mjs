@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import {
   buildD1Query,
   buildDurableObjectQuery,
+  buildDurableObjectStorageQuery,
   buildQueueQuery,
   buildWorkerQuery,
   calendarStart,
@@ -39,7 +40,7 @@ test('GraphQL schema errors are bounded and redact account identifiers', () => {
 });
 
 test('every generated analytics document is a read-only GraphQL query', () => {
-  for (const query of [buildD1Query(), buildWorkerQuery(), buildQueueQuery(), buildDurableObjectQuery()]) {
+  for (const query of [buildD1Query(), buildWorkerQuery(), buildQueueQuery(), buildDurableObjectQuery(), buildDurableObjectStorageQuery()]) {
     assert.equal(isReadOnlyGraphQL(query), true);
     assert.doesNotMatch(query, /\bmutation\b/i);
   }
@@ -70,8 +71,15 @@ test('Durable Object metrics stay scoped to Assist and avoid unsupported dimensi
   assert.doesNotMatch(query, /scriptName: \$scriptName/);
   assert.match(query, /sum \{ requests responseBodySize \}/);
   assert.match(query, /sum \{ cpuTime \}/);
-  assert.match(query, /max \{ storedBytes \}/);
   assert.doesNotMatch(query, /className/);
+});
+
+test('Durable Object storage uses the Worker-scoped dataset filter independently', () => {
+  const query = buildDurableObjectStorageQuery();
+  assert.match(query, /scriptName: \$scriptName/);
+  assert.match(query, /durableObjectsStorageGroups/);
+  assert.match(query, /max \{ storedBytes \}/);
+  assert.doesNotMatch(query, /namespaceId/);
 });
 
 test('Durable Object namespace resolution matches only the configured Assist script and class', () => {
