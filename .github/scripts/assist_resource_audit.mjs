@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const API = 'https://api.cloudflare.com/client/v4';
 const GRAPHQL = `${API}/graphql`;
@@ -25,6 +25,10 @@ export function redactSql(value) {
 
 export function isReadOnlyGraphQL(document) {
   return /^\s*query\b/i.test(String(document || ''));
+}
+
+export function resolveAssistConfigPath(configPath = '../../customer-apps/assist/wrangler.jsonc') {
+  return path.isAbsolute(configPath) ? configPath : path.resolve(path.dirname(fileURLToPath(import.meta.url)), configPath);
 }
 
 export function calendarStart(now, days) {
@@ -195,7 +199,7 @@ function redactMetricQueries(result) {
 export async function runAudit({ token, account, days, configPath = '../../customer-apps/assist/wrangler.jsonc', now = new Date() }) {
   if (!token || !/^[a-f0-9]{32}$/i.test(String(account || ''))) throw new Error('cloudflare_credentials_invalid');
   const windowDays = validateDays(days);
-  const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  const config = JSON.parse(fs.readFileSync(resolveAssistConfigPath(configPath), 'utf8'));
   if (config.name !== 'mkety-assist') throw new Error('assist_worker_binding_not_confirmed');
   const db = await resolveDatabase(token, account);
   const queueResources = await listAssistQueues(token, account, queueNamesFromConfig(config));
