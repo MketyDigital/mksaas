@@ -1,6 +1,14 @@
 name: Mkety Assist Cloudflare Resource Audit
 
 on:
+  push:
+    branches:
+      - 'audit/mkety-assist-cloudflare-resource-usage-20261019'
+    paths:
+      - .github/scripts/assist_resource_audit.mjs
+      - .github/scripts/assist_resource_audit.test.mjs
+      - .github/workflows/mkety-assist-cloudflare-resource-audit.yml
+      - customer-apps/assist/wrangler.jsonc
   pull_request:
     paths:
       - .github/scripts/assist_resource_audit.mjs
@@ -27,7 +35,7 @@ concurrency:
 
 jobs:
   verify:
-    if: github.event_name == 'pull_request'
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
