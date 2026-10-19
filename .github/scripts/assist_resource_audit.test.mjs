@@ -73,8 +73,7 @@ test('workflow only reads secrets in the main-branch manual audit job and runs n
   const workflow = fs.readFileSync(new URL('../workflows/mkety-assist-cloudflare-resource-audit.yml', import.meta.url), 'utf8');
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /github\.ref == 'refs\/heads\/main'/);
-  assert.match(workflow, /push:/);
-  assert.match(workflow, /if: github\.event_name != 'workflow_dispatch'/);
+  assert.match(workflow, /if: github\.event_name == 'pull_request'/);
   assert.match(workflow, /if: github\.event_name == 'workflow_dispatch' && github\.ref == 'refs\/heads\/main'/);
   assert.match(workflow, /contents: read/);
   assert.doesNotMatch(workflow, /wrangler deploy|d1 execute|queues create|\bDELETE\s+.*cloudflare/i);
