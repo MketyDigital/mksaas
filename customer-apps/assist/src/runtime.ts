@@ -1305,6 +1305,35 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
     }
   }
 
+  const messageText = typeof message.text === "string" ? message.text.trim() : "";
+  if (messageText.startsWith("/start link_")) {
+    const linkToken = messageText.slice("/start link_".length).split(/\s+/)[0];
+    const challenge = await env.DB.prepare(
+      `SELECT id,user_id FROM telegram_link_challenges
+       WHERE token_hash=? AND assistant_id=? AND consumed_at IS NULL AND expires_at>? LIMIT 1`,
+    ).bind(await sha256Text(linkToken), assistantId, unix()).first<any>();
+    if (challenge) {
+      const recoveryToken = await getAssistantSecret(env, assistantId, "telegram_bot_token");
+      if (!recoveryToken) {
+        await markWebhook(env.DB, assistantId, updateId, "error");
+        return json({ ok: true });
+      }
+      try {
+        await env.DB.batch([
+          env.DB.prepare(
+            "UPDATE users SET telegram_user_id=?,telegram_username=?,telegram_recovery_assistant_id=?,telegram_linked_at=?,updated_at=? WHERE id=?",
+          ).bind(String(message.from?.id ?? message.chat.id), message.from?.username ? String(message.from.username) : null, assistantId, unix(), unix(), challenge.user_id),
+          env.DB.prepare("UPDATE telegram_link_challenges SET consumed_at=? WHERE id=?").bind(unix(), challenge.id),
+        ]);
+        await telegramSend(recoveryToken, chatId, "Telegram is now connected to your Mkety Assist account for secure access recovery.");
+      } catch {
+        await telegramSend(recoveryToken, chatId, "This Telegram account is already linked to another Mkety Assist user. Contact your administrator if this is unexpected.");
+      }
+      await markWebhook(env.DB, assistantId, updateId, "processed");
+      return json({ ok: true, recoveryLinked: true });
+    }
+  }
+
   const selfIdentity = await env.DB.prepare(
     `SELECT 1 FROM assistant_channel_identities
      WHERE assistant_id=? AND channel='telegram' AND platform_user_id=? AND is_self_identity=1
@@ -1345,31 +1374,10 @@ export async function handleAssistantTelegramWebhook(request: Request, env: Assi
     return json({ ok: true });
   }
 
-  const messageText = typeof message.text === "string" ? message.text.trim() : "";
   if (messageText.startsWith("/start link_")) {
-    const linkToken = messageText.slice("/start link_".length).split(/\s+/)[0];
-    const challenge = await env.DB.prepare(
-      `SELECT id,user_id FROM telegram_link_challenges
-       WHERE token_hash=? AND assistant_id=? AND consumed_at IS NULL AND expires_at>? LIMIT 1`,
-    ).bind(await sha256Text(linkToken), assistantId, unix()).first<any>();
-    if (!challenge) {
-      await telegramSend(token, chatId, "This Mkety Assist recovery-link request has expired. Return to your portal and start again.");
-      await markWebhook(env.DB, assistantId, updateId, "processed");
-      return json({ ok: true });
-    }
-    try {
-      await env.DB.batch([
-        env.DB.prepare(
-          "UPDATE users SET telegram_user_id=?,telegram_username=?,telegram_recovery_assistant_id=?,telegram_linked_at=?,updated_at=? WHERE id=?",
-        ).bind(String(message.from?.id ?? message.chat.id), message.from?.username ? String(message.from.username) : null, assistantId, unix(), unix(), challenge.user_id),
-        env.DB.prepare("UPDATE telegram_link_challenges SET consumed_at=? WHERE id=?").bind(unix(), challenge.id),
-      ]);
-      await telegramSend(token, chatId, "Telegram is now connected to your Mkety Assist account for secure access recovery.");
-    } catch {
-      await telegramSend(token, chatId, "This Telegram account is already linked to another Mkety Assist user. Contact your administrator if this is unexpected.");
-    }
+    await telegramSend(token, chatId, "This Mkety Assist recovery-link request has expired. Return to your portal and start again.");
     await markWebhook(env.DB, assistantId, updateId, "processed");
-    return json({ ok: true, recoveryLinked: true });
+    return json({ ok: true });
   }
 
   const conversation = await upsertConversation(env.DB, assistant.customer_id, assistantId, chatId);
