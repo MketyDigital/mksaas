@@ -115,8 +115,11 @@ function render_usage(){
  const u=state.usage||{};
  const monthly=(Number(u.monthlyFeeMinor||0)/100).toFixed(2);
  const setup=(Number(u.setupFeeMinor||0)/100).toFixed(2);
+ const creditAlert=(APP.role==='owner'||APP.role==='admin')?u.creditAlert:null;
+ const alertCard=creditAlert&&creditAlert.level!=='normal'?'<div class="card" role="status" style="margin-top:16px;border-color:'+(creditAlert.level==='critical'?'#f87171':'#fbbf24')+'"><strong>'+(creditAlert.level==='critical'?'Low MKredit balance':'MKredit balance reminder')+'</strong><p class="muted">Available balance: '+esc(Number(creditAlert.balanceMkredits||0).toLocaleString())+' MKredit.'+(creditAlert.level==='soft'&&creditAlert.softThresholdMkredits?'<br>Early reminder threshold: '+esc(Number(creditAlert.softThresholdMkredits).toLocaleString())+' MKredit.':'')+' Review your balance and add MKredit if needed using the funding buttons above.</p></div>':'';
  return '<div class="spread"><div><h1 class="title">Usage & MKredit</h1><p class="sub">Your MKredit balance and funding history.</p></div><div class="row"><button class="btn primary" data-action="pay-plan">Fund monthly MKredit</button><button class="btn" data-action="buy-credits">Add MKredit</button></div></div>'+
  '<div class="grid">'+metric('Monthly fee','$'+monthly)+(Number(u.setupFeeMinor||0)>0?metric('Setup fee','$'+setup):'')+metric('MKredit available',u.creditsAvailable??0)+metric('MKredit used',u.creditsUsed??0)+'</div>'+
+ alertCard+
  '<div class="card" style="margin-top:16px"><h3>Payment history</h3><div id="checkoutBox" class="muted">Loading…</div></div>';
 }
 function render_team(){return '<div class="spread"><div><h1 class="title">Team</h1><p class="sub">Simple portal access for owners, admins and members.</p></div><button class="btn primary" data-action="invite-member">Add member</button></div><div class="card" id="teamBox"><div class="empty">Loading team…</div></div>'}
@@ -283,7 +286,7 @@ async function revokeApiKey(id){
 async function loadNotificationPreferences(){
  try{
   const d=await api('/api/notifications/preferences'),p=d.preferences||{};
-  notificationPrefsBox.innerHTML='<label class="row"><input type="checkbox" data-notify-kind="handoff" '+(p.handoff!==false?'checked':'')+'> Human handoff alerts</label><label class="row"><input type="checkbox" data-notify-kind="human_approval" '+(p.human_approval!==false?'checked':'')+'> Human approval requests</label><label class="row"><input type="checkbox" data-notify-kind="reminder_failure" '+(p.reminder_failure!==false?'checked':'')+'> Reminder failure alerts</label><label class="row"><input type="checkbox" data-notify-kind="channel_health" '+(p.channel_health!==false?'checked':'')+'> Channel health alerts</label>';
+  notificationPrefsBox.innerHTML='<label class="row"><input type="checkbox" data-notify-kind="handoff" '+(p.handoff!==false?'checked':'')+'> Human handoff alerts</label><label class="row"><input type="checkbox" data-notify-kind="human_approval" '+(p.human_approval!==false?'checked':'')+'> Human approval requests</label><label class="row"><input type="checkbox" data-notify-kind="reminder_failure" '+(p.reminder_failure!==false?'checked':'')+'> Reminder failure alerts</label><label class="row"><input type="checkbox" data-notify-kind="channel_health" '+(p.channel_health!==false?'checked':'')+'> Channel health alerts</label>'+(APP.role==='owner'||APP.role==='admin'?'<label class="row"><input type="checkbox" data-notify-kind="credit_low" '+(p.credit_low!==false?'checked':'')+'> Low MKredit balance alerts</label>':'');
   notificationPrefsBox.querySelectorAll('[data-notify-kind]').forEach(x=>x.onchange=async()=>{try{await api('/api/notifications/preferences',{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({[x.dataset.notifyKind]:x.checked})});toastMsg('Alert preference saved')}catch(e){toastMsg(e.message)}});
  }catch(e){notificationPrefsBox.textContent=e.message}
 }

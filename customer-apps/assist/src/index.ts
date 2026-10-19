@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { handleApiKeyInference, handleAssistantTelegramWebhook, handleRuntimeApi, inspectStaleAttemptProjections, invokeProviderModel, processDueReminders, processInboundQueue, processReplyQueue, recoverReplyJobs, runtimeErrorResponse, syncTelegramBusinessWebhookCapabilities } from "./runtime";
+import { handleApiKeyInference, handleAssistantTelegramWebhook, handleRuntimeApi, inspectStaleAttemptProjections, invokeProviderModel, processDueReminders, processInboundQueue, processOwnerCreditAlertOutbox, processReplyQueue, recoverReplyJobs, runtimeErrorResponse, syncTelegramBusinessWebhookCapabilities } from "./runtime";
 import { finishOperatorOidc, startOperatorOidc } from "./operator-oidc";
 import { renderCustomerPortal, renderOperatorPortal } from "./ui";
 import { customerUsageProjection } from "./billing/metering";
+import { creditAlertProjection } from "./billing/credit-alerts";
 import { deriveCustomerBaseRates, deriveCustomerMediaBaseRates, withKnownProviderCosts } from "./billing/provider-derived-pricing";
 import { hasSignificantRateIncrease } from "./billing/rate-change-guard";
 import { buildCreditActivityQuery, normalizeCreditActivityFilters } from "./billing/operator-credit-activity";
@@ -167,6 +168,7 @@ export default {
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
     await Promise.all([
       processDueReminders(env),
+      processOwnerCreditAlertOutbox(env).catch(() => { console.error("owner credit alert delivery failed"); }),
       recoverReplyJobs(env),
       inspectStaleAttemptProjections(env),
       syncTelegramBusinessWebhookCapabilities(env),
@@ -2508,14 +2510,20 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
       "SELECT balance,lifetime_consumed FROM credit_accounts WHERE customer_id=?",
     ).bind(customer.customerId).first<any>();
     const policy = await env.DB.prepare(
-      "SELECT subscription_amount_minor,setup_fee_minor FROM commercial_policy WHERE customer_id=?",
+      "SELECT subscription_amount_minor,setup_fee_minor,included_credits FROM commercial_policy WHERE customer_id=?",
     ).bind(customer.customerId).first<any>();
-    return json(customerUsageProjection({
+    const usage = customerUsageProjection({
       monthlyFeeMinor: Math.max(0, Number(policy?.subscription_amount_minor || 0)),
       setupFeeMinor: Math.max(0, Number(policy?.setup_fee_minor || 0)),
       creditsAvailable: mkreditsFromCreditAtoms(Math.max(0, Number(account?.balance || 0))),
       creditsUsed: mkreditsFromCreditAtoms(Math.max(0, Number(account?.lifetime_consumed || 0))),
-    }));
+    });
+    if (session.role === "owner" || session.role === "admin") {
+      return json({ ...usage, creditAlert: creditAlertProjection(
+        Number(account?.balance || 0), Number(policy?.included_credits || 0),
+      ) });
+    }
+    return json(usage);
   }
 
   if (url.pathname === "/api/billing/credit-offer" && request.method === "GET") {

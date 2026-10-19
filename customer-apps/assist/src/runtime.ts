@@ -20,6 +20,7 @@ import { reserveRawModelCredits, releaseRawModelCredits, settleRawModelCredits }
 import { mediaUsageEconomics } from "./billing/media-economics";
 import { deriveCustomerBaseRates, deriveCustomerMediaBaseRates } from "./billing/provider-derived-pricing";
 import { prepareUsageLimitFollowup } from "./handoff/usage-limit-followup";
+import { processOwnerCreditAlertOutbox as processCreditAlertOutbox } from "./billing/credit-alerts";
 import {
   RetryableInferenceError,
   claimModelCapacity,
@@ -744,6 +745,12 @@ export async function handleRuntimeApi(
       "SELECT enabled FROM human_approval_notification_preferences WHERE customer_id=? AND user_id=? LIMIT 1",
     ).bind(customer.customerId, session.userId).first<any>();
     preferences.human_approval = approvalPreference ? Boolean(approvalPreference.enabled) : true;
+    if (session.role === "owner" || session.role === "admin") {
+      const creditPreference = await env.DB.prepare(
+        "SELECT enabled FROM owner_credit_alert_preferences WHERE customer_id=? AND user_id=? LIMIT 1",
+      ).bind(customer.customerId, session.userId).first<any>();
+      preferences.credit_low = creditPreference ? Boolean(creditPreference.enabled) : true;
+    }
     return json({ preferences });
   }
 
@@ -765,6 +772,13 @@ export async function handleRuntimeApi(
         `INSERT INTO human_approval_notification_preferences(customer_id,user_id,enabled,updated_at)
          VALUES (?,?,?,?) ON CONFLICT(customer_id,user_id) DO UPDATE SET enabled=excluded.enabled,updated_at=excluded.updated_at`,
       ).bind(customer.customerId, session.userId, body.human_approval ? 1 : 0, now));
+    }
+    if (typeof body.credit_low === "boolean") {
+      if (session.role !== "owner" && session.role !== "admin") return json({ error: "admin_required" }, 403);
+      statements.push(env.DB.prepare(
+        `INSERT INTO owner_credit_alert_preferences(customer_id,user_id,enabled,updated_at)
+         VALUES (?,?,?,?) ON CONFLICT(customer_id,user_id) DO UPDATE SET enabled=excluded.enabled,updated_at=excluded.updated_at`,
+      ).bind(customer.customerId, session.userId, body.credit_low ? 1 : 0, now));
     }
     if (statements.length) await env.DB.batch(statements);
     return json({ ok: true });
@@ -1951,6 +1965,19 @@ async function notifyLinkedOwners(
   await Promise.all((rows.results ?? []).map((row: any) =>
     telegramSend(token, String(row.telegram_user_id), text).catch(() => ({ ok: false }))
   ));
+}
+
+export async function processOwnerCreditAlertOutbox(env: AssistEnv) {
+  return processCreditAlertOutbox(env.DB, async (recipient, alert) => {
+    const token = await getAssistantSecret(env, recipient.assistantId, "telegram_bot_token");
+    if (!token) return false;
+    const balance = Math.round((alert.balanceAtoms / 10_000) * 10_000) / 10_000;
+    const message = alert.level === "critical"
+      ? `Mkety Assist low-credit alert: your workspace balance is ${balance.toLocaleString()} MKredit. Review Usage & MKredit in your portal when convenient.`
+      : `Mkety Assist credit reminder: your workspace balance is ${balance.toLocaleString()} MKredit, at the early reminder level. Review Usage & MKredit in your portal when convenient.`;
+    const result = await telegramSend(token, recipient.telegramUserId, message);
+    return result?.ok === true;
+  });
 }
 
 async function notifyHumanApprovalOwners(env: AssistEnv, input: {
