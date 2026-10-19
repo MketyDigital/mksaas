@@ -77,6 +77,7 @@ test('workflow only reads secrets in the main-branch manual audit job and runs n
   assert.match(workflow, /if: github\.event_name == 'workflow_dispatch' && github\.ref == 'refs\/heads\/main'/);
   assert.match(workflow, /contents: read/);
   assert.doesNotMatch(workflow, /wrangler deploy|d1 execute|queues create|\bDELETE\s+.*cloudflare/i);
+  assert.doesNotMatch(workflow, /REPORT_PATH:\s*\$\{\{\s*runner\.temp/);
   assert.match(workflow, /CLOUDFLARE_API_TOKEN/);
   assert.match(workflow, /CLOUDFLARE_ACCOUNT_ID/);
 });
