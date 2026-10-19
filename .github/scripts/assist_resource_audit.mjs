@@ -96,7 +96,14 @@ export function buildDurableObjectQuery() {
       durableObjectsPeriodicGroups(limit: 1000, filter: {namespaceId: $namespaceId, date_geq: $start, date_leq: $end}) {
         sum { cpuTime }
       }
-      durableObjectsStorageGroups(limit: 1000, filter: {namespaceId: $namespaceId, date_geq: $start, date_leq: $end}) {
+    } }
+  }`;
+}
+
+export function buildDurableObjectStorageQuery() {
+  return `query AssistDurableObjectStorageAudit($accountTag: String!, $scriptName: String!, $start: Date!, $end: Date!) {
+    viewer { accounts(filter: {accountTag: $accountTag}) {
+      durableObjectsStorageGroups(limit: 1000, filter: {scriptName: $scriptName, date_geq: $start, date_leq: $end}) {
         max { storedBytes }
       }
     } }
@@ -242,6 +249,7 @@ export async function runAudit({ token, account, days, configPath = '../../custo
       const classes = await Promise.all(namespaces.map(async ({ className, namespaceId }) => ({
         className,
         analytics: await optional(() => graph(buildDurableObjectQuery(), { accountTag: account, namespaceId, start: startDate, end: endDate }, token)),
+        storage: await optional(() => graph(buildDurableObjectStorageQuery(), { accountTag: account, scriptName: config.name, start: startDate, end: endDate }, token)),
       })));
       return classes;
     }),
