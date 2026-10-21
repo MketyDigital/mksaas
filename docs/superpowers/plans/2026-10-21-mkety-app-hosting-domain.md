@@ -36,7 +36,7 @@
 - Create: `src/features/deploy/hostnames.test.ts`
 
 **Interfaces:**
-- Produces: `normalizeMketyAppHostname(hostname: string): string | null`, `createMketyAppHostname(projectSlug: string, stableId: string): string`, and `resolveMketyAppHostname(input, repository): Promise<ResolvedDeployment | null>`.
+- Produces: `HostnameKind = 'preview' | 'production'`; `ResolvedDeployment = { deploymentId: string; tenantId: string; providerDeploymentRef: string; kind: HostnameKind; status: 'active' }`; `DeploymentHostnameRepository.findActiveByHostname(hostname: string): Promise<ResolvedDeployment | null>`; and `normalizeMketyAppHostname(hostname: string): string | null`, `createMketyAppHostname(projectSlug: string, stableId: string): string`, `resolveMketyAppHostname(hostname: string, repository: DeploymentHostnameRepository): Promise<ResolvedDeployment | null>`.
 
 - [ ] **Step 1: Test** normalization, lowercase/IDNA rejection or normalization, single-label requirement, reserved labels, collision suffix, and rejection of `mkety.app` as a customer allocation.
 - [ ] **Step 2: Run** `pnpm exec jest src/features/deploy/hostnames.test.ts --runInBand`; confirm the missing contract fails.
@@ -67,6 +67,8 @@
 - Create: `src/features/deploy/server/providers/cloudflare-dispatch.ts`
 - Create: `src/features/deploy/server/providers/cloudflare-dispatch.test.ts`
 - Create: `src/features/deploy/server/providers/customer-deployment-runtime.ts`
+- Create: `src/features/deploy/server/providers/customer-deployment-artifact.ts`
+- Create: `src/features/deploy/server/providers/customer-deployment-artifact.test.ts`
 
 **Interfaces:**
 - Consumes: hostname resolution contract from Task 1 and records from Task 2.
@@ -83,8 +85,6 @@
 - Modify: `src/features/deploy/actions.ts`
 - Modify: `src/features/deploy/request-actions.ts`
 - Modify: `src/features/deploy/server/execution/service.ts`
-- Create: `src/features/deploy/server/providers/customer-deployment-artifact.ts`
-- Create: `src/features/deploy/server/providers/customer-deployment-artifact.test.ts`
 - Modify: `src/features/deploy/components/DeployFoundationPanel.tsx`
 - Modify: `src/features/deploy/components/DeploymentApprovalQueue.tsx`
 - Modify: `src/features/deploy/server/execution/service.test.ts`
