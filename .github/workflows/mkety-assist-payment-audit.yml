@@ -1,0 +1,67 @@
+name: Mkety Assist Payment D1 Audit
+
+on:
+  pull_request:
+    paths:
+      - '.github/scripts/assist-payment-audit.mjs'
+      - '.github/scripts/assist-payment-audit.test.mjs'
+      - '.github/workflows/mkety-assist-payment-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mkety-assist-payment-d1-audit
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test payment audit read-only controls and query scope
+        run: node --test .github/scripts/assist-payment-audit.test.mjs
+
+  audit:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      MKETY_ASSIST_CF_SAAS_TOKEN: ${{ secrets.MKETY_ASSIST_CF_SAAS_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      REPORT_PATH: assist-payment-checkout-audit.json
+    steps:
+      - name: Checkout trusted main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Require read-only audit credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${CLOUDFLARE_ACCOUNT_ID:-}" =~ ^[a-fA-F0-9]{32}$ ]] || { echo 'CLOUDFLARE_ACCOUNT_ID is required'; exit 1; }
+          [[ -n "${CLOUDFLARE_API_TOKEN:-}" || -n "${MKETY_ASSIST_CF_SAAS_TOKEN:-}" ]] || { echo 'A Cloudflare D1 token is required'; exit 1; }
+          echo 'Audit is limited to aggregate Assist payment checkout and funding ledger data; all issued SQL is guarded SELECT-only.'
+      - name: Run all-customer read-only Assist payment audit
+        run: node .github/scripts/assist-payment-audit.mjs
+      - name: Upload sanitized payment audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mkety-assist-payment-checkout-audit-${{ github.run_id }}
+          path: ${{ env.REPORT_PATH }}
+          if-no-files-found: ignore
+          retention-days: 14

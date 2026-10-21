@@ -166,7 +166,7 @@
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.53.1",
-    "vite": "^8.2.2",
+    "vite": "^8.2.4",
     "wcag-contrast": "^3.0.0",
     "wrangler": "4.129.0"
   },
