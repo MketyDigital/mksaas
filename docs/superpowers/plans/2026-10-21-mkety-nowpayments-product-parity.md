@@ -100,6 +100,7 @@
 - Create: `src/app/api/payments/enterprise/nowpayments/start/route.ts`
 - Modify: `src/shared/db/schema/platform-enterprise-orders.ts`
 - Create: `src/shared/db/migrations/0045_enterprise_nowpayments_checkout_token.sql`
+- Modify: `src/shared/db/migrations/meta/_journal.json`
 - Create: `src/shared/db/migrations/meta/0045_snapshot.json`
 
 **Interfaces:**
