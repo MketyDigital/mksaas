@@ -63,7 +63,8 @@ export function buildCreditActivityQuery(filters: QueryInput): { sql: string; va
       NULL AS requested_reasoning_mode,NULL AS applied_reasoning_mode,
       NULL AS model_alias,NULL AS provider,NULL AS provider_model,NULL AS provider_cost_micros,
       l.workload_type,l.workload_id,NULL AS payment_status,NULL AS payment_provider,
-      NULL AS purchase_type,NULL AS payment_amount_minor,NULL AS payment_currency,l.created_at
+      NULL AS purchase_type,NULL AS payment_amount_minor,NULL AS payment_currency,
+      NULL AS provider_payment_id,NULL AS provider_pay_currency,NULL AS provider_actual_paid_fiat_minor,l.created_at
       FROM credit_ledger l
       JOIN customers c ON c.id=l.customer_id
       LEFT JOIN assistants a ON a.id=l.assistant_id
@@ -82,7 +83,8 @@ export function buildCreditActivityQuery(filters: QueryInput): { sql: string; va
       COALESCE((SELECT SUM(pc.cost_micros) FROM provider_cost_events pc WHERE pc.usage_event_id=u.id),u.provider_cost_micros,0) AS provider_cost_micros,
       u.workload_type,COALESCE(u.workload_id,u.api_key_id) AS workload_id,
       NULL AS payment_status,NULL AS payment_provider,NULL AS purchase_type,
-      NULL AS payment_amount_minor,NULL AS payment_currency,u.created_at
+      NULL AS payment_amount_minor,NULL AS payment_currency,
+      NULL AS provider_payment_id,NULL AS provider_pay_currency,NULL AS provider_actual_paid_fiat_minor,u.created_at
       FROM usage_events u
       JOIN customers c ON c.id=u.customer_id
       LEFT JOIN assistants a ON a.id=u.assistant_id
@@ -100,7 +102,8 @@ export function buildCreditActivityQuery(filters: QueryInput): { sql: string; va
       NULL AS requested_reasoning_mode,NULL AS applied_reasoning_mode,
       NULL AS model_alias,NULL AS provider,NULL AS provider_model,NULL AS provider_cost_micros,
       NULL AS workload_type,NULL AS workload_id,p.status AS payment_status,p.provider AS payment_provider,
-      p.purchase_type,p.canonical_amount_minor AS payment_amount_minor,p.canonical_currency AS payment_currency,p.created_at
+      p.purchase_type,p.canonical_amount_minor AS payment_amount_minor,p.canonical_currency AS payment_currency,
+      p.provider_payment_id,p.provider_pay_currency,p.provider_actual_paid_fiat_minor,p.created_at
       FROM payment_checkouts p
       JOIN customers c ON c.id=p.customer_id
       LEFT JOIN credit_ledger l ON l.customer_id=p.customer_id AND l.reference_id=p.id AND l.kind IN ('topup','plan_funding')
