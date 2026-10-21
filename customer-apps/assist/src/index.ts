@@ -670,6 +670,24 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
     return operatorLoginPage();
   }
 
+  if (url.pathname === "/api/ops/payment/verify" && request.method === "POST") {
+    const body = await readJson(request);
+    const reference = requiredString(body.reference, "reference").slice(0, 80);
+    const checkout = await env.DB.prepare(
+      "SELECT * FROM payment_checkouts WHERE reference=? LIMIT 1",
+    ).bind(reference).first<any>();
+    if (!checkout) return json({ error: "payment_not_found" }, 404);
+    const result = await verifyAssistPaymentCheckout(env, checkout, body.providerPaymentId);
+    const verification = await result.clone().json<any>().catch(() => ({}));
+    await env.DB.prepare(
+      `INSERT INTO audit_events(id,actor_type,actor_id,customer_id,action,target_type,target_id,metadata_json,created_at)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+    ).bind(id("aud"), "operator", operator.operatorUserId, checkout.customer_id,
+      "payment_provider_reverification", "payment_checkout", checkout.id,
+      JSON.stringify({ provider: checkout.provider, status: verification.status || verification.error || "unknown" }), unix()).run();
+    return result;
+  }
+
   if (url.pathname === "/api/ops/inference-attempts" && request.method === "GET") {
     const customerId = String(url.searchParams.get("customerId") || "").trim() || null;
     const requestedLimit = Number(url.searchParams.get("limit") || 50);
@@ -2611,8 +2629,17 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     return json({ checkouts: (rows.results ?? []).map((row: any) => ({ ...row, credits: mkreditsFromCreditAtoms(row.credits) })) });
   }
 
+  if (url.pathname === "/api/billing/payment/verify" && request.method === "POST") {
+    const body = await readJson(request);
+    const reference = requiredString(body.reference, "reference").slice(0, 80);
+    const checkout = await env.DB.prepare(
+      "SELECT * FROM payment_checkouts WHERE reference=? AND customer_id=? LIMIT 1",
+    ).bind(reference, customer.customerId).first<any>();
+    if (!checkout) return json({ error: "payment_not_found" }, 404);
+    return verifyAssistPaymentCheckout(env, checkout, body.providerPaymentId);
+  }
+
   if (url.pathname === "/api/billing/plan/start" && request.method === "POST") {
-    if (!env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET) return json({ error: "payment_provider_not_configured" }, 503);
     const policy = await env.DB.prepare(
       "SELECT subscription_amount_minor,included_credits,funding_mode,minimum_funding_minor,setup_fee_minor,currency FROM commercial_policy WHERE customer_id=? LIMIT 1",
     ).bind(customer.customerId).first<any>();
@@ -2657,7 +2684,6 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
   }
 
   if (url.pathname === "/api/billing/topup/start" && request.method === "POST") {
-    if (!env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET) return json({ error: "topup_provider_not_configured" }, 503);
     const policy = await env.DB.prepare(
       "SELECT topup_enabled,currency FROM commercial_policy WHERE customer_id=? LIMIT 1",
     ).bind(customer.customerId).first<any>();
@@ -2967,9 +2993,9 @@ async function handleFlutterwavePaymentWebhook(request: Request, env: Env): Prom
 
   const updated = await env.DB.prepare(
     `UPDATE payment_checkouts
-     SET status='paid',provider_payment_id=?,provider_event_id=?,settled_at=?
-     WHERE id=? AND status='pending'`,
-  ).bind(String(data.id || ""), String(data.id || ""), now, checkout.id).run();
+     SET status='paid',provider_payment_id=?,provider_event_id=?,settled_at=?,settlement_key=?
+     WHERE id=? AND status IN ('pending','failed')`,
+  ).bind(String(data.id || ""), String(data.id || ""), now, `flutterwave:${String(data.id || reference)}`, checkout.id).run();
 
   return json({ ok: true, settled: Boolean(updated.meta.changes), duplicate: !updated.meta.changes });
 }
@@ -3003,7 +3029,7 @@ async function handleNowPaymentsPaymentWebhook(request: Request, env: Env): Prom
 
   const settlementKey = `nowpayments:${paymentId}`;
   const updated = await env.DB.prepare(
-    "UPDATE payment_checkouts SET status='paid',provider_payment_id=?,provider_event_id=?,settled_at=?,settlement_key=? WHERE id=? AND status='pending'",
+    "UPDATE payment_checkouts SET status='paid',provider_payment_id=?,provider_event_id=?,settled_at=?,settlement_key=? WHERE id=? AND status IN ('pending','failed')",
   ).bind(paymentId, paymentId, unix(), settlementKey, checkout.id).run();
 
   return json({ ok: true, settled: Boolean(updated.meta.changes), duplicate: !updated.meta.changes });
@@ -3044,9 +3070,58 @@ async function handleKoraPaymentWebhook(request: Request, env: Env): Promise<Res
 
   const settlementKey = `kora:${String(payload.provider_event_id || payload.provider_payment_id || reference)}`;
   const updated = await env.DB.prepare(
-    "UPDATE payment_checkouts SET status='paid',provider_payment_id=?,provider_event_id=?,settled_at=?,settlement_key=? WHERE id=? AND status='pending'",
+    "UPDATE payment_checkouts SET status='paid',provider_payment_id=?,provider_event_id=?,settled_at=?,settlement_key=? WHERE id=? AND status IN ('pending','failed')",
   ).bind(String(payload.provider_payment_id || ""), String(payload.provider_event_id || ""), unix(), settlementKey, checkout.id).run();
   return json({ ok: true, settled: Boolean(updated.meta.changes), duplicate: !updated.meta.changes });
+}
+
+async function verifyAssistPaymentCheckout(env: Env, checkout: any, submittedPaymentId: unknown): Promise<Response> {
+  if (String(checkout.status) === "paid") return json({ status: "paid", alreadyPaid: true });
+  if (!["pending", "failed"].includes(String(checkout.status))) return json({ error: "payment_not_verifiable" }, 409);
+
+  if (String(checkout.provider) === "nowpayments") {
+    const paymentId = String(submittedPaymentId || "").trim();
+    if (!/^\d{1,24}$/.test(paymentId)) return json({ error: "provider_payment_id_required" }, 400);
+    const apiKey = String(env.NOWPAYMENTS_API_KEY || "");
+    if (!apiKey) return json({ error: "payment_provider_not_configured" }, 503);
+    const response = await fetch(`https://api.nowpayments.io/v1/payment/${encodeURIComponent(paymentId)}`, {
+      headers: { "x-api-key": apiKey, "accept": "application/json" },
+    });
+    const payment = await response.json<any>().catch(() => null);
+    if (!response.ok || !payment || String(payment.payment_id || "") !== paymentId) {
+      return json({ error: "provider_verification_unavailable" }, 502);
+    }
+    if (String(payment.order_id || "") !== String(checkout.reference)) return json({ error: "provider_reference_mismatch" }, 409);
+    if (String(payment.price_currency || "").toLowerCase() !== String(checkout.canonical_currency || "USD").toLowerCase()) {
+      return json({ error: "provider_currency_mismatch" }, 409);
+    }
+    const actualAmountMinor = parsePaymentAmountMinor(payment.price_amount);
+    if (actualAmountMinor !== Number(checkout.canonical_amount_minor || 0)) return json({ error: "provider_amount_mismatch" }, 409);
+    const providerStatus = String(payment.payment_status || "").toLowerCase();
+    if (providerStatus !== "finished") {
+      return json({ status: providerStatus === "expired" || providerStatus === "failed" ? "failed" : "pending" });
+    }
+    const updated = await env.DB.prepare(
+      `UPDATE payment_checkouts
+       SET status='paid',provider_payment_id=?,provider_event_id=?,settled_at=?,settlement_key=?
+       WHERE id=? AND status IN ('pending','failed')`,
+    ).bind(paymentId, paymentId, unix(), `nowpayments:${paymentId}`, checkout.id).run();
+    const current = await env.DB.prepare("SELECT status FROM payment_checkouts WHERE id=? LIMIT 1").bind(checkout.id).first<any>();
+    return json({ status: String(current?.status || "pending"), settled: Boolean(updated.meta.changes), duplicate: !updated.meta.changes });
+  }
+
+  if (!["flutterwave", "kora"].includes(String(checkout.provider))) return json({ error: "payment_provider_unsupported" }, 409);
+  const secret = String(env.FLUTTERWAVE_CHECKOUT_BROKER_SECRET || "");
+  if (!secret) return json({ error: "payment_provider_not_configured" }, 503);
+  const response = await fetch("https://mkety.com/api/payments/assist/verify", {
+    method: "POST",
+    headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" },
+    body: JSON.stringify({ provider: checkout.provider, reference: checkout.reference }),
+  });
+  const result = await response.json<any>().catch(() => null);
+  if (!response.ok || !result?.success) return json({ error: "provider_verification_unavailable" }, 502);
+  const current = await env.DB.prepare("SELECT status FROM payment_checkouts WHERE id=? LIMIT 1").bind(checkout.id).first<any>();
+  return json({ status: String(current?.status || result.status || "pending"), settled: String(current?.status) === "paid" });
 }
 
 async function handlePaymentReturn(url: URL, env: Env): Promise<Response> {
