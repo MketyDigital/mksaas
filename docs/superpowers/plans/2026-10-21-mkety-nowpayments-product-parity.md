@@ -134,6 +134,7 @@
 - Modify: `src/shared/db/schema/billing-settlements.ts`
 - Modify: `src/shared/db/schema/platform-enterprise-orders.ts`
 - Create: `src/shared/db/migrations/0046_nowpayments_network_evidence.sql`
+- Modify: `src/shared/db/migrations/meta/_journal.json`
 - Create: `src/shared/db/migrations/meta/0046_snapshot.json`
 - Modify: `src/shared/db/schema/billing.test.ts`
 - Modify: `src/features/enterprise-checkout/server/service.test.ts`
