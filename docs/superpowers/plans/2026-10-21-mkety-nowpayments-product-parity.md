@@ -72,6 +72,8 @@
 - Modify: `src/features/billing/gateways/nowpayments.test.ts`
 - Modify: `src/app/api/tenants/[tenant]/billing/checkout/route.ts`
 - Modify: `src/app/app/[tenant]/billing/checkout/page.tsx`
+- Modify: `src/app/api/payments/nowpayments/start/route.ts`
+- Create: `src/app/api/payments/nowpayments/start/route.test.ts`
 - Modify: `src/features/ai-runtime/components/EnterpriseAiCheckoutForm.tsx`
 - Modify: `src/app/api/tenants/[tenant]/enterprise-ai/checkout/route.ts`
 - Modify: `src/features/enterprise-checkout/providers/nowpayments.ts`
@@ -81,9 +83,9 @@
 - Consumes: Task 2 currency helpers.
 - Produces: optional validated `payCurrency` passed only to the NOWPayments adapter; returned `providerCurrency` remains canonical fiat.
 
-- [ ] **Step 1: Add failing tests** proving selected currency is normalized, server-revalidated, and passed as `pay_currency`; assert `price_amount`/`price_currency` stay unchanged and fixed-rate/customer-paid-fee fields are set.
+- [ ] **Step 1: Add failing tests** proving selected currency is normalized, server-revalidated, and passed as `pay_currency` for Billing, Enterprise AI, and any Assist request using the central start route; assert `price_amount`/`price_currency` stay unchanged and fixed-rate/customer-paid-fee fields are set.
 - [ ] **Step 2: Run** focused billing and Enterprise adapter Jest suites; expect new assertions to fail.
-- [ ] **Step 3: Add a reusable customer selector** to Billing and Enterprise AI checkout; show all active network-specific choices and safe provider-hosted fallback when the list is unavailable.
+- [ ] **Step 3: Add a reusable customer selector** to Billing and Enterprise AI checkout; audit the Assist broker-start route and update it only if it is still an active caller; show all active network-specific choices and safe provider-hosted fallback when the list is unavailable.
 - [ ] **Step 4: Revalidate in the server adapters** immediately before invoice creation; reject a stale/forged ticker and never trust a client amount/reference.
 - [ ] **Step 5: Run** `pnpm exec jest src/features/billing/gateways/nowpayments.test.ts src/features/enterprise-checkout/providers/nowpayments.test.ts --runInBand`.
 
