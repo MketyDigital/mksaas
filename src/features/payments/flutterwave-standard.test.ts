@@ -8,6 +8,7 @@ import {
   getEnabledMketyFlutterwaveCurrencies,
   quoteFlutterwaveCollection,
   verifyFlutterwaveStandardTransaction,
+  verifyFlutterwavePaymentByReference,
 } from './flutterwave-standard';
 
 describe('Flutterwave v3 shared payments', () => {
@@ -241,5 +242,22 @@ describe('Flutterwave v3 shared payments', () => {
         headers: expect.objectContaining({ Authorization: 'Bearer secret' }),
       }),
     );
+  });
+
+  it('re-queries transactions by the Assist merchant reference for recovery', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'success', data: { id: 92, status: 'successful', tx_ref: 'ASSIST-MKA-1234567890' } }),
+    });
+
+    await expect(verifyFlutterwavePaymentByReference({
+      reference: 'ASSIST-MKA-1234567890',
+      secretKey: 'secret',
+      fetchImpl: fetchMock,
+    })).resolves.toMatchObject({ id: 92, tx_ref: 'ASSIST-MKA-1234567890' });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe('https://api.flutterwave.com/v3/transactions/verify_by_reference?tx_ref=ASSIST-MKA-1234567890');
+    expect(init.headers.Authorization).toBe('Bearer secret');
   });
 });
