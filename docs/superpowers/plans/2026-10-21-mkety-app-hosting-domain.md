@@ -64,15 +64,18 @@
 - Create: `workers/mkety-app-router/src/index.ts`
 - Create: `workers/mkety-app-router/src/index.test.ts`
 - Create: `workers/mkety-app-router/wrangler.jsonc`
-- Modify: `src/features/deploy/server/providers/cloudflare-candidate.ts` only if the existing candidate boundary needs a shared safe dispatch-name validator.
+- Create: `src/features/deploy/server/providers/cloudflare-dispatch.ts`
+- Create: `src/features/deploy/server/providers/cloudflare-dispatch.test.ts`
+- Create: `src/features/deploy/server/providers/customer-deployment-runtime.ts`
 
 **Interfaces:**
 - Consumes: hostname resolution contract from Task 1 and records from Task 2.
-- Produces: `fetch(request, env)` that serves apex service content or dispatches an active hostname to an allow-listed deployment in the Mkety namespace.
+- Produces: `fetch(request, env)` that serves apex service content or dispatches an active hostname to an allow-listed deployment in the Mkety Workers for Platforms namespace. The Cloudflare provider implements the existing `DeploymentProviderAdapter` contract and uses a namespace name from server-only configuration.
 
 - [ ] **Step 1: Test** apex response, active deployment dispatch, unknown/suspended host rejection, path/query preservation, wrong Host header, and no request-selected namespace/script id.
-- [ ] **Step 2: Implement** a dedicated dynamic-dispatch Worker and a namespaced deployment lookup; never route customer traffic through `mkety-app-host`.
-- [ ] **Step 3: Run** focused Worker tests and Wrangler dry-run.
+- [ ] **Step 2: Implement** the dedicated dispatch Worker and a separate Workers for Platforms deployment adapter; keep `cloudflare-candidate.ts` and its proof-only artifact unchanged.
+- [ ] **Step 3: Validate** dispatch namespace/script identifiers and confirm the configured namespace is present before any customer deployment request can run.
+- [ ] **Step 4: Run** focused Worker/provider tests and Wrangler dry-run.
 
 ### Task 4: Connect Deploy requests to previews and promotion
 
@@ -80,20 +83,23 @@
 - Modify: `src/features/deploy/actions.ts`
 - Modify: `src/features/deploy/request-actions.ts`
 - Modify: `src/features/deploy/server/execution/service.ts`
-- Modify: `src/features/deploy/server/providers/customer-candidate-artifact.ts`
+- Create: `src/features/deploy/server/providers/customer-deployment-artifact.ts`
+- Create: `src/features/deploy/server/providers/customer-deployment-artifact.test.ts`
 - Modify: `src/features/deploy/components/DeployFoundationPanel.tsx`
 - Modify: `src/features/deploy/components/DeploymentApprovalQueue.tsx`
-- Create: `src/features/deploy/server/hostnames.test.ts`
+- Modify: `src/features/deploy/server/execution/service.test.ts`
+- Modify: `src/features/deploy/server/providers/customer-candidate-runtime.ts` only to keep candidate execution isolated; do not route production through it.
 
 **Interfaces:**
 - Consumes: Tasks 1–3.
 - Produces: a customer-visible preview URL only after a successful isolated deployment; a stable production alias changes only through the existing approved deployment flow.
 
 - [ ] **Step 1: Trace and test the current candidate-only flow**; do not label the existing proof Worker as a customer application.
-- [ ] **Step 2: Implement the customer artifact source** using an explicit immutable build-artifact contract. Reject arbitrary URLs, unbounded bundles, invalid modules, and missing application identity.
-- [ ] **Step 3: Bind preview hostname to the completed immutable deployment** and show the URL in Deploy UI only after the host record is active.
-- [ ] **Step 4: Implement production alias promotion** as a tenant-authorized, audited state transition; old versions remain available for rollback.
-- [ ] **Step 5: Test** cross-tenant isolation, build failure cleanup, stale mapping revocation, preview immutability, and rollback target restoration.
+- [ ] **Step 2: Implement the customer artifact source** using an immutable bundle stored in the project's authorized build-artifact store; reject arbitrary URLs, unbounded bundles, invalid modules, and missing application identity. If no authorized build/artifact intake exists, add an authenticated bounded bundle intake to Deploy and store it under a tenant-scoped R2 key.
+- [ ] **Step 3: Add a distinct provider path** for non-production preview versus explicitly approved production promotion; candidate proof Workers cannot be reused as customer production apps.
+- [ ] **Step 4: Bind preview hostname to the completed immutable deployment** and show the URL in Deploy UI only after the host record is active.
+- [ ] **Step 5: Implement production alias promotion** as a tenant-authorized, audited state transition; old versions remain available for rollback.
+- [ ] **Step 6: Test** cross-tenant isolation, build failure cleanup, stale mapping revocation, preview immutability, and rollback target restoration.
 
 ### Task 5: Provision and verify the domain endpoint
 
