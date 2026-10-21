@@ -48,6 +48,7 @@
 - Create: `src/shared/db/schema/deployment-hostnames.ts`
 - Modify: `src/shared/db/schema/index.ts`
 - Create: `src/shared/db/migrations/0044_deployment_hostnames.sql`
+- Modify: `src/shared/db/migrations/meta/_journal.json`
 - Create: `src/shared/db/migrations/meta/0044_snapshot.json`
 - Modify: `src/shared/db/schema/deployments.test.ts`
 
