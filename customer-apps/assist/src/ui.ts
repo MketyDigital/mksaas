@@ -321,6 +321,24 @@ async function saveBranding(){try{await api('/api/settings',{method:'PATCH',head
 function paymentCurrencyOptions(){
  return '<option>USD</option><option>NGN</option><option>GHS</option><option>KES</option><option>GBP</option><option>EUR</option><option>ZAR</option><option>XAF</option><option>XOF</option><option>UGX</option><option>RWF</option><option>TZS</option><option>MWK</option><option>EGP</option>';
 }
+function cryptoCurrencyLabel(code){
+ const labels={usdtton:'USDT · TON (recommended)',usdttrc20:'USDT · TRON',usdterc20:'USDT · Ethereum',usdtbsc:'USDT · BNB Smart Chain',usdtsol:'USDT · Solana'};
+ return labels[String(code||'').toLowerCase()]||String(code||'').toUpperCase();
+}
+async function loadNowPaymentsCurrencyChoices(select,note){
+ try{
+  const data=await api('/api/billing/nowpayments/currencies');
+  const currencies=Array.isArray(data.currencies)?data.currencies.map(x=>String(x).toLowerCase()):[];
+  const preferred=String(data.defaultCurrency||'').toLowerCase();
+  const ordered=preferred&&currencies.includes(preferred)?[preferred,...currencies.filter(x=>x!==preferred)]:currencies;
+  select.innerHTML=ordered.length?ordered.map(code=>'<option value="'+esc(code)+'">'+esc(cryptoCurrencyLabel(code))+'</option>').join(''):'<option value="">Choose crypto on NOWPayments</option>';
+  if(preferred&&ordered.includes(preferred))select.value=preferred;
+  note.textContent=ordered.length?'Select any crypto enabled for this NOWPayments account. USDT · TON is selected by default when available.':'Currency list is temporarily unavailable; NOWPayments will show its available crypto choices at checkout.';
+ }catch{
+  select.innerHTML='<option value="">Choose crypto on NOWPayments</option>';
+  note.textContent='Currency list is temporarily unavailable; NOWPayments will show its available crypto choices at checkout.';
+ }
+}
 function launchFlutterwave(data){
  if(data.provider==='nowpayments'&&data.widgetUrl){
   const widgetUrl=String(data.widgetUrl),hostedUrl=String(data.hostedUrl||'');
@@ -381,9 +399,11 @@ async function payPlan(){
     '<div class="card" id="planFundingQuote"><span class="muted">Calculating…</span></div>'+
     '<div class="field"><label>Payment method</label><select class="input" id="planMethod">'+methods.html+'</select></div>'+
     '<div class="field" id="planCurrencyWrap"><label>Payment currency</label><select class="input" id="planCurrency">'+paymentCurrencyOptions()+'</select></div>'+
+    '<div class="field" id="planCryptoWrap"><label>Crypto / network</label><select class="input" id="planCrypto"><option value="">Loading available crypto…</option></select><small class="muted" id="planCryptoNote">Loading NOWPayments options…</small><small class="muted">The order remains priced in USD. NOWPayments shows the customer-paid fees in its final quote.</small></div>'+
     '<p id="planPayMsg" class="muted">Credits are added only after Mkety verifies the payment.</p><div class="row"><button class="btn primary" id="planPayStart">Fund credits</button><button class="btn" id="planPayCancel">Cancel</button></div>');
   planPayCancel.onclick=closeModal;
-  const toggleCurrency=()=>{planCurrencyWrap.style.display=planMethod.value==='flutterwave'?'grid':'none'};planMethod.onchange=toggleCurrency;toggleCurrency();
+  let planCryptoLoaded=false;
+  const toggleCurrency=()=>{planCurrencyWrap.style.display=planMethod.value==='flutterwave'?'grid':'none';planCryptoWrap.style.display=planMethod.value==='nowpayments'?'grid':'none';if(planMethod.value==='nowpayments'&&!planCryptoLoaded){planCryptoLoaded=true;loadNowPaymentsCurrencyChoices(planCrypto,planCryptoNote)}};planMethod.onchange=toggleCurrency;toggleCurrency();
   let quoteTimer=null;
   const refreshFundingQuote=async()=>{try{
     const q=await api('/api/billing/funding-quote',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({fundingAmountUsd:partial?planFundingAmount.value:undefined})});
@@ -396,7 +416,8 @@ async function payPlan(){
     const d=await api('/api/billing/plan/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({
       fundingAmountUsd:partial?planFundingAmount.value:undefined,
       paymentMethod:planMethod.value,
-      ...(planMethod.value==='flutterwave'?{paymentCurrency:planCurrency.value}:{})
+      ...(planMethod.value==='flutterwave'?{paymentCurrency:planCurrency.value}:{}),
+      ...(planMethod.value==='nowpayments'&&planCrypto.value?{payCurrency:planCrypto.value}:{})
     })});
     planPayMsg.textContent='Opening secure checkout…';launchFlutterwave(d)
   }catch(e){planPayStart.disabled=false;planPayMsg.textContent=e.message}};
@@ -406,9 +427,10 @@ async function buyCredits(){
  try{
   const [methods,offer]=await Promise.all([paymentMethodOptions(),api('/api/billing/credit-offer').catch(()=>({recurringAmountMinor:0}))]);
   const suggested=Number(offer.recurringAmountMinor||0)>0?(Number(offer.recurringAmountMinor)/100).toFixed(2):'';
-  openModal('<h2>Add MKredit</h2><p class="muted">Type how much you want to add. The normal full monthly funding amount is suggested when available, but you can change it.</p><div class="field"><label>Amount (USD)</label><input class="input" id="topupAmount" inputmode="decimal" placeholder="Enter amount" value="'+esc(suggested)+'"></div><div class="card" id="creditQuote"><span class="muted">Enter an amount to see your credits.</span></div><div class="field"><label>Payment method</label><select class="input" id="topupMethod">'+methods.html+'</select></div><div class="field" id="topupCurrencyWrap"><label>Payment currency</label><select class="input" id="topupCurrency">'+paymentCurrencyOptions()+'</select></div><p id="topupMsg" class="muted">Credits are added only after Mkety verifies the payment.</p><div class="row"><button class="btn primary" id="topupStart">Add MKredit</button><button class="btn" id="topupCancel">Cancel</button></div>');
+  openModal('<h2>Add MKredit</h2><p class="muted">Type how much you want to add. The normal full monthly funding amount is suggested when available, but you can change it.</p><div class="field"><label>Amount (USD)</label><input class="input" id="topupAmount" inputmode="decimal" placeholder="Enter amount" value="'+esc(suggested)+'"></div><div class="card" id="creditQuote"><span class="muted">Enter an amount to see your credits.</span></div><div class="field"><label>Payment method</label><select class="input" id="topupMethod">'+methods.html+'</select></div><div class="field" id="topupCurrencyWrap"><label>Payment currency</label><select class="input" id="topupCurrency">'+paymentCurrencyOptions()+'</select></div><div class="field" id="topupCryptoWrap"><label>Crypto / network</label><select class="input" id="topupCrypto"><option value="">Loading available crypto…</option></select><small class="muted" id="topupCryptoNote">Loading NOWPayments options…</small><small class="muted">The order remains priced in USD. NOWPayments shows the customer-paid fees in its final quote.</small></div><p id="topupMsg" class="muted">Credits are added only after Mkety verifies the payment.</p><div class="row"><button class="btn primary" id="topupStart">Add MKredit</button><button class="btn" id="topupCancel">Cancel</button></div>');
   topupCancel.onclick=closeModal;
-  const toggleCurrency=()=>{topupCurrencyWrap.style.display=topupMethod.value==='flutterwave'?'grid':'none'};topupMethod.onchange=toggleCurrency;toggleCurrency();
+  let topupCryptoLoaded=false;
+  const toggleCurrency=()=>{topupCurrencyWrap.style.display=topupMethod.value==='flutterwave'?'grid':'none';topupCryptoWrap.style.display=topupMethod.value==='nowpayments'?'grid':'none';if(topupMethod.value==='nowpayments'&&!topupCryptoLoaded){topupCryptoLoaded=true;loadNowPaymentsCurrencyChoices(topupCrypto,topupCryptoNote)}};topupMethod.onchange=toggleCurrency;toggleCurrency();
   let quoteTimer=null;
   const refreshQuote=async()=>{if(!String(topupAmount.value||'').trim()){creditQuote.innerHTML='<span class="muted">Enter an amount to see your credits.</span>';return null}try{const q=await api('/api/billing/credit-quote',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({amountUsd:topupAmount.value})});creditQuote.innerHTML='<div class="muted">You add</div><div style="font-size:20px;font-weight:800">$'+(Number(q.amountMinor||0)/100).toFixed(2)+' → '+esc(q.credits)+' Mkety credits</div>';return q}catch(e){creditQuote.innerHTML='<span class="muted">'+esc(e.message)+'</span>';return null}};
   topupAmount.oninput=()=>{if(quoteTimer)clearTimeout(quoteTimer);quoteTimer=setTimeout(refreshQuote,250)};await refreshQuote();
@@ -418,7 +440,8 @@ async function buyCredits(){
     const d=await api('/api/billing/topup/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({
       amountUsd:topupAmount.value,
       paymentMethod:topupMethod.value,
-      ...(topupMethod.value==='flutterwave'?{paymentCurrency:topupCurrency.value}:{})
+      ...(topupMethod.value==='flutterwave'?{paymentCurrency:topupCurrency.value}:{}),
+      ...(topupMethod.value==='nowpayments'&&topupCrypto.value?{payCurrency:topupCrypto.value}:{})
     })});
     topupMsg.textContent='Opening secure checkout…';launchFlutterwave(d)
   }catch(e){topupStart.disabled=false;topupMsg.textContent=e.message}};
@@ -427,18 +450,20 @@ async function buyCredits(){
 async function verifyCustomerPayment(reference,provider){
  let providerPaymentId='';
  if(provider==='nowpayments'){
-  providerPaymentId=String(window.prompt('Enter the NOWPayments payment ID from your payment details. Your Assist payment reference is already matched to this checkout.')||'').trim();
+  const saved=(state.checkouts||[]).find(x=>x.reference===reference)?.provider_payment_id;
+  providerPaymentId=String(saved||'').trim();
+  if(!providerPaymentId)providerPaymentId=String(window.prompt('Enter the NOWPayments payment ID from your payment details. Your Assist payment reference is already matched to this checkout.')||'').trim();
   if(!providerPaymentId)return;
  }
  const result=await api('/api/billing/payment/verify',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({reference,providerPaymentId})});
  await loadCheckouts();
- toastMsg(result.status==='paid'?'Payment verified. MKredit has been added.':'Payment is still processing. Check again shortly.');
+ toastMsg(result.status==='paid'?'Payment verified. MKredit has been added.':result.providerStatus==='partially_paid'?'NOWPayments confirms a partial payment. No MKredit has been added; support can review it.':'Payment is still processing. Check again shortly.');
 }
 async function loadCheckouts(){try{
  const d=await api('/api/billing/checkouts');const list=d.checkouts||[];
  state.checkouts=list;
  if(!checkoutBox)return;
- checkoutBox.innerHTML=list.length?'<table class="table"><thead><tr><th>Funding</th><th>Credits</th><th>Amount</th><th>Status / reference</th><th>Date</th></tr></thead><tbody>'+list.slice(0,10).map(x=>'<tr><td>'+esc(x.purchase_type==='plan'?'Monthly credits':'Added credits')+'</td><td>'+esc(x.credits)+'</td><td>'+esc(x.provider_currency||x.canonical_currency||'USD')+' '+esc(((Number(x.provider_amount_minor||x.canonical_amount_minor||0))/100).toFixed(2))+'</td><td><span class="pill '+(x.status==='paid'?'ok':x.status==='pending'?'warn':'')+'">'+esc(x.status)+'</span><div class="muted">'+esc(x.reference)+'</div>'+(x.status==='pending'||x.status==='failed'?'<button class="btn" data-verify-assist-payment="'+esc(x.reference)+'" data-payment-provider="'+esc(x.provider)+'">Verify payment</button>':'')+'</td><td>'+new Date(x.created_at*1000).toLocaleString()+'</td></tr>').join('')+'</tbody></table><p class="muted">If a payment succeeded but remains pending, use Verify payment. For crypto payments, also enter the NOWPayments payment ID shown by the provider.</p>':'No payments yet.';
+ checkoutBox.innerHTML=list.length?'<table class="table"><thead><tr><th>Funding</th><th>Credits</th><th>Amount</th><th>Status / reference</th><th>Date</th></tr></thead><tbody>'+list.slice(0,10).map(x=>'<tr><td>'+esc(x.purchase_type==='plan'?'Monthly credits':'Added credits')+'</td><td>'+esc(x.credits)+'</td><td>'+esc(x.provider_currency||x.canonical_currency||'USD')+' '+esc(((Number(x.provider_amount_minor||x.canonical_amount_minor||0))/100).toFixed(2))+'</td><td><span class="pill '+(x.status==='paid'?'ok':x.status==='pending'?'warn':'')+'">'+esc(x.status)+'</span><div class="muted">'+esc(x.reference)+'</div>'+(x.provider==='nowpayments'&&x.provider_payment_id?'<div class="muted">NOWPayments ID: '+esc(x.provider_payment_id)+(x.provider_pay_currency?' · '+esc(x.provider_pay_currency.toUpperCase()):'')+'</div>':'')+(x.provider==='nowpayments'&&x.provider_payment_status?'<div class="muted">Provider status: '+esc(x.provider_payment_status)+(x.provider_actual_paid_fiat_minor!=null?' · received value $'+(Number(x.provider_actual_paid_fiat_minor)/100).toFixed(2):'')+'</div>':'')+(x.status==='pending'||x.status==='failed'?'<button class="btn" data-verify-assist-payment="'+esc(x.reference)+'" data-payment-provider="'+esc(x.provider)+'">Verify payment</button>':'')+'</td><td>'+new Date(x.created_at*1000).toLocaleString()+'</td></tr>').join('')+'</tbody></table><p class="muted">If a payment succeeded but remains pending, use Verify payment. A saved NOWPayments payment ID is checked automatically; if one is not available yet, enter the ID shown by NOWPayments.</p>':'No payments yet.';
  checkoutBox.querySelectorAll('[data-verify-assist-payment]').forEach(button=>button.onclick=async()=>{button.disabled=true;try{await verifyCustomerPayment(button.dataset.verifyAssistPayment,button.dataset.paymentProvider)}catch(e){toastMsg(e.message)}finally{button.disabled=false}});
 }catch(e){checkoutBox.textContent=e.message}}
 async function changePassword(){
@@ -596,7 +621,8 @@ function activityDetails(item){
   if(item.record_type==='payment'){
     const amount=item.payment_amount_usd==null?'amount unavailable':'$'+Number(item.payment_amount_usd).toFixed(2)+' '+(item.payment_currency||'USD');
     const grant=item.payment_status==='paid'?formatMkredit(item.amount)+' MKredit granted':formatMkredit(item.amount)+(item.payment_status==='pending'?' MKredit if payment completes':' MKredit not granted');
-    return '<div>'+esc(item.payment_provider||'Payment provider')+' · '+esc(amount)+'</div><div class="muted">'+esc(grant)+'</div>';
+    const providerEvidence=item.payment_provider==='nowpayments'?'<div class="muted">NOWPayments: '+esc(item.provider_payment_status||'awaiting provider update')+(item.provider_pay_currency?' · '+esc(item.provider_pay_currency.toUpperCase()):'')+(item.provider_payment_id?' · ID '+esc(item.provider_payment_id):'')+(item.provider_actual_paid_fiat_minor!=null?' · paid value $'+(Number(item.provider_actual_paid_fiat_minor)/100).toFixed(2):'')+'</div>':'';
+    return '<div>'+esc(item.payment_provider||'Payment provider')+' · '+esc(amount)+'</div><div class="muted">'+esc(grant)+'</div>'+providerEvidence;
   }
   let reason='';try{const meta=JSON.parse(item.metadata_json||'{}');reason=String(meta.reason||'')}catch{}
   const workload=item.workload_type==='api_key'?'API key '+(item.workload_id||''):'';
@@ -608,21 +634,35 @@ function renderCreditActivity(){
   creditSummary.innerHTML=[['Customers',summaries.customerCount||0],['Available MKredit',formatMkredit(summaries.balance)],['Granted lifetime',formatMkredit(summaries.lifetimeGranted)],['Consumed lifetime',formatMkredit(summaries.lifetimeConsumed)]].map(([label,value])=>'<div class="card"><div class="muted">'+esc(label)+'</div><div class="metric">'+esc(value)+'</div></div>').join('');
   creditActivityBox.innerHTML=creditActivityItems.length?'<table class="table"><thead><tr><th>When</th><th>Customer</th><th>Transaction</th><th>For / how</th><th>MKredit</th><th>Balance after</th><th>Ops</th></tr></thead><tbody>'+creditActivityItems.map(item=>{
     const amount=item.record_type==='payment'&&item.payment_status!=='paid'?'—':formatMkredit(item.amount);
-    return '<tr><td>'+new Date(Number(item.created_at)*1000).toLocaleString()+'</td><td><strong>'+esc(item.customer_name||item.customer_id)+'</strong><div class="muted">'+esc(item.customer_id)+'</div></td><td>'+esc(activityDescription(item))+'<div class="muted">'+esc(item.reference_id||item.id)+'</div></td><td>'+activityDetails(item)+'</td><td>'+esc(amount)+(item.record_type==='payment'&&item.payment_status!=='paid'?'<div class="muted">No credit applied</div>':'')+'</td><td>'+esc(item.balance_after==null?'—':formatMkredit(item.balance_after))+'</td><td>'+(item.record_type==='payment'&&['pending','failed'].includes(String(item.payment_status))?'<button class="btn" data-ops-verify-payment="'+esc(item.reference_id)+'" data-payment-provider="'+esc(item.payment_provider)+'">Verify</button>':'—')+'</td></tr>';
+    const partialEligible=item.payment_provider==='nowpayments'&&String(item.provider_payment_status)==='partially_paid'&&Number(item.provider_actual_paid_fiat_minor)>=Number(item.payment_amount_minor);
+    const opsActions=item.record_type==='payment'&&['pending','failed'].includes(String(item.payment_status))?'<div class="row"><button class="btn" data-ops-verify-payment="'+esc(item.reference_id)+'" data-payment-provider="'+esc(item.payment_provider)+'" data-provider-payment-id="'+esc(item.provider_payment_id||'')+'">Verify</button>'+(partialEligible?'<button class="btn" data-ops-approve-partial="'+esc(item.reference_id)+'" data-provider-payment-id="'+esc(item.provider_payment_id||'')+'" data-payment-amount="'+esc((Number(item.payment_amount_minor)/100).toFixed(2))+'" data-paid-amount="'+esc((Number(item.provider_actual_paid_fiat_minor)/100).toFixed(2))+'">Approve verified partial</button>':'')+'</div>':'—';
+    return '<tr><td>'+new Date(Number(item.created_at)*1000).toLocaleString()+'</td><td><strong>'+esc(item.customer_name||item.customer_id)+'</strong><div class="muted">'+esc(item.customer_id)+'</div></td><td>'+esc(activityDescription(item))+'<div class="muted">'+esc(item.reference_id||item.id)+'</div></td><td>'+activityDetails(item)+'</td><td>'+esc(amount)+(item.record_type==='payment'&&item.payment_status!=='paid'?'<div class="muted">No credit applied</div>':'')+'</td><td>'+esc(item.balance_after==null?'—':formatMkredit(item.balance_after))+'</td><td>'+opsActions+'</td></tr>';
   }).join('')+'</tbody></table>':'<div class="card">No matching credit activity.</div>';
-  creditActivityBox.querySelectorAll('[data-ops-verify-payment]').forEach(button=>button.onclick=()=>verifyOpsPayment(button.dataset.opsVerifyPayment,button.dataset.paymentProvider));
+  creditActivityBox.querySelectorAll('[data-ops-verify-payment]').forEach(button=>button.onclick=()=>verifyOpsPayment(button.dataset.opsVerifyPayment,button.dataset.paymentProvider,button.dataset.providerPaymentId));
+  creditActivityBox.querySelectorAll('[data-ops-approve-partial]').forEach(button=>button.onclick=()=>approveOpsPartial(button.dataset.opsApprovePartial,button.dataset.providerPaymentId,button.dataset.paymentAmount,button.dataset.paidAmount));
   loadOlderActivity.disabled=creditActivityNextOffset==null;
   activityPageStatus.textContent=creditActivityItems.length?creditActivityItems.length+' records shown'+(creditActivityNextOffset!=null?' · more available':''):' ';
 }
-async function verifyOpsPayment(reference,provider){
- let providerPaymentId='';
+async function verifyOpsPayment(reference,provider,savedPaymentId=''){
+ let providerPaymentId=String(savedPaymentId||'');
  if(provider==='nowpayments'){
-  providerPaymentId=String(window.prompt('Enter the NOWPayments payment ID from its transaction record.')||'').trim();
+  providerPaymentId=providerPaymentId||String(window.prompt('Enter the NOWPayments payment ID from its transaction record.')||'').trim();
   if(!providerPaymentId)return;
  }
  try{
   const result=await api('/api/ops/payment/verify',{method:'POST',body:JSON.stringify({reference,providerPaymentId})});
-  toastOps(result.status==='paid'?'Provider confirmed the payment; the Assist ledger has granted it once.':'Provider still reports processing. No credit was added.');
+  toastOps(result.status==='paid'?'Provider confirmed the payment; the Assist ledger has granted it once.':result.providerStatus==='partially_paid'?'NOWPayments confirms a partial payment. No credit was added; review the verified amount before approving.':'Provider still reports processing. No credit was added.');
+  await loadCreditActivity(false);
+ }catch(e){toastOps(e.message)}
+}
+async function approveOpsPartial(reference,savedPaymentId,orderAmount,paidAmount){
+ let providerPaymentId=String(savedPaymentId||'').trim();
+ if(!providerPaymentId)providerPaymentId=String(window.prompt('Enter the NOWPayments payment ID from its transaction record.')||'').trim();
+ if(!providerPaymentId)return;
+ if(!window.confirm('NOWPayments will be checked again. If it still confirms a partially paid amount of $'+paidAmount+' or more against the $'+orderAmount+' Assist order, this will grant its stored MKredit exactly once. Continue?'))return;
+ try{
+  const result=await api('/api/ops/payment/approve-partial',{method:'POST',body:JSON.stringify({reference,providerPaymentId})});
+  toastOps(result.partialApproval?'Provider-verified partial payment approved; MKredit was granted once.':'Payment was not approved.');
   await loadCreditActivity(false);
  }catch(e){toastOps(e.message)}
 }

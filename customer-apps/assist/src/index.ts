@@ -10,6 +10,7 @@ import { buildCreditActivityQuery, normalizeCreditActivityFilters } from "./bill
 import { writePublishedPromptSnapshot } from "./conversation/context-cache";
 import { projectDomainStatus, verifyDomainEvidence } from "./domains/verification";
 import { defaultPaymentMethod, listPaymentMethods, verifyNowPaymentsSignature } from "./payments/service";
+import { buildNowPaymentsInvoicePayload, canApproveNowPaymentsPartial, chooseDefaultNowPaymentsCurrency, normalizeNowPaymentsCurrencies } from "./payments/nowpayments";
 import { validateProviderConnection } from "./providers/validation";
 import { reasoningCapabilities } from "./providers/reasoning";
 import { evaluateMediaReadiness, evaluateRouteReadiness, routeTargetMediaSupported, routeTargetPricingConfigured, routeTargetValidated } from "./providers/route-readiness";
@@ -686,6 +687,50 @@ async function handleOps(request: Request, env: Env): Promise<Response> {
       "payment_provider_reverification", "payment_checkout", checkout.id,
       JSON.stringify({ provider: checkout.provider, status: verification.status || verification.error || "unknown" }), unix()).run();
     return result;
+  }
+
+  if (url.pathname === "/api/ops/payment/approve-partial" && request.method === "POST") {
+    const body = await readJson(request);
+    const reference = requiredString(body.reference, "reference").slice(0, 80);
+    const paymentId = String(body.providerPaymentId || "").trim();
+    if (!/^\d{1,24}$/.test(paymentId)) return json({ error: "provider_payment_id_required" }, 400);
+    const checkout = await env.DB.prepare(
+      "SELECT * FROM payment_checkouts WHERE reference=? AND provider='nowpayments' LIMIT 1",
+    ).bind(reference).first<any>();
+    if (!checkout) return json({ error: "payment_not_found" }, 404);
+    if (!['pending', 'failed'].includes(String(checkout.status))) return json({ error: "payment_not_approvable" }, 409);
+    const apiKey = String(env.NOWPAYMENTS_API_KEY || "");
+    if (!apiKey) return json({ error: "payment_provider_not_configured" }, 503);
+    const response = await fetch(`https://api.nowpayments.io/v1/payment/${encodeURIComponent(paymentId)}`, {
+      headers: { "x-api-key": apiKey, accept: "application/json" },
+    });
+    const payment = await response.json<any>().catch(() => null);
+    if (!response.ok || !payment || String(payment.payment_id || "") !== paymentId) {
+      return json({ error: "provider_verification_unavailable" }, 502);
+    }
+    if (!canApproveNowPaymentsPartial(payment, checkout)) {
+      return json({ error: "partial_payment_not_eligible", providerStatus: String(payment.payment_status || "unknown") }, 409);
+    }
+    const actualCurrency = String(payment.pay_currency || "").toLowerCase();
+    if (checkout.provider_pay_currency && actualCurrency !== String(checkout.provider_pay_currency).toLowerCase()) {
+      return json({ error: "provider_currency_mismatch" }, 409);
+    }
+    const receivedFiatMinor = parsePaymentAmountMinor(payment.actually_paid_fiat);
+    const settlementKey = `nowpayments:${paymentId}`;
+    const updated = await env.DB.prepare(
+      `UPDATE payment_checkouts
+       SET status='paid',provider_payment_id=?,provider_event_id=?,provider_payment_status='partially_paid',
+           provider_pay_currency=COALESCE(?,provider_pay_currency),provider_actual_paid_fiat_minor=?,settled_at=?,settlement_key=?
+       WHERE id=? AND status IN ('pending','failed') AND settlement_key IS NULL`,
+    ).bind(paymentId, paymentId, actualCurrency || null, receivedFiatMinor, unix(), settlementKey, checkout.id).run();
+    if (!updated.meta.changes) return json({ error: "payment_not_approvable", status: "unchanged" }, 409);
+    await env.DB.prepare(
+      `INSERT INTO audit_events(id,actor_type,actor_id,customer_id,action,target_type,target_id,metadata_json,created_at)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+    ).bind(id("aud"), "operator", operator.operatorUserId, checkout.customer_id,
+      "payment_partial_approved", "payment_checkout", checkout.id,
+      JSON.stringify({ provider: "nowpayments", providerPaymentId: paymentId, providerStatus: "partially_paid", actualPaidFiatMinor: receivedFiatMinor }), unix()).run();
+    return json({ status: "paid", partialApproval: true, actualPaidFiatMinor: receivedFiatMinor, paymentId });
   }
 
   if (url.pathname === "/api/ops/inference-attempts" && request.method === "GET") {
@@ -2620,10 +2665,29 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     return json({ methods, defaultMethod: defaultPaymentMethod(status), source: "direct_config" });
   }
 
+  if (url.pathname === "/api/billing/nowpayments/currencies" && request.method === "GET") {
+    const apiKey = String(env.NOWPAYMENTS_API_KEY || "");
+    if (!apiKey) return json({ currencies: [], defaultCurrency: "", source: "provider_unavailable" });
+    try {
+      const response = await fetch("https://api.nowpayments.io/v1/currencies", {
+        headers: { "x-api-key": apiKey, accept: "application/json" },
+      });
+      const payload = await response.json<any>().catch(() => null);
+      if (!response.ok || !payload) return json({ currencies: [], defaultCurrency: "", source: "provider_unavailable" });
+      const currencies = normalizeNowPaymentsCurrencies(payload);
+      return json({ currencies, defaultCurrency: chooseDefaultNowPaymentsCurrency(currencies), source: "nowpayments" }, 200, {
+        "cache-control": "private, max-age=180",
+      });
+    } catch {
+      return json({ currencies: [], defaultCurrency: "", source: "provider_unavailable" });
+    }
+  }
+
   if (url.pathname === "/api/billing/checkouts" && request.method === "GET") {
     const rows = await env.DB.prepare(
       `SELECT id,reference,provider,credits,canonical_amount_minor,canonical_currency,
-              provider_amount_minor,provider_currency,status,created_at,settled_at,purchase_type
+              provider_amount_minor,provider_currency,provider_payment_id,provider_pay_currency,
+              provider_payment_status,provider_actual_paid_fiat_minor,status,created_at,settled_at,purchase_type
        FROM payment_checkouts WHERE customer_id=? ORDER BY created_at DESC LIMIT 50`,
     ).bind(customer.customerId).all();
     return json({ checkouts: (rows.results ?? []).map((row: any) => ({ ...row, credits: mkreditsFromCreditAtoms(row.credits) })) });
@@ -2668,7 +2732,7 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     const paymentMethod = await resolveRequestedPaymentMethod(env, body.paymentMethod);
     if (!paymentMethod) return json({ error: "payment_method_unavailable" }, 503);
     if (paymentMethod === "nowpayments") {
-      return startAssistNowPaymentsCheckout({ env, customer, session, credits, canonicalAmountMinor, purchaseType: "plan" });
+      return startAssistNowPaymentsCheckout({ env, customer, session, credits, canonicalAmountMinor, purchaseType: "plan", payCurrency: String(body.payCurrency || "") });
     }
     if (paymentMethod === "flutterwave") {
       return startAssistFlutterwaveCheckout({
@@ -2704,7 +2768,7 @@ async function handleCustomerApi(request: Request, env: Env, customer: CustomerC
     const paymentMethod = await resolveRequestedPaymentMethod(env, body.paymentMethod);
     if (!paymentMethod) return json({ error: "payment_method_unavailable" }, 503);
     if (paymentMethod === "nowpayments") {
-      return startAssistNowPaymentsCheckout({ env, customer, session, credits, canonicalAmountMinor, purchaseType: "topup" });
+      return startAssistNowPaymentsCheckout({ env, customer, session, credits, canonicalAmountMinor, purchaseType: "topup", payCurrency: String(body.payCurrency || "") });
     }
     if (paymentMethod === "flutterwave") {
       return startAssistFlutterwaveCheckout({
@@ -2746,11 +2810,28 @@ async function startAssistNowPaymentsCheckout(input: {
   credits: number;
   canonicalAmountMinor: number;
   purchaseType: "plan" | "topup";
+  payCurrency: string;
 }) {
   const { env, customer, session, credits, canonicalAmountMinor, purchaseType } = input;
   const apiKey = String(env.NOWPAYMENTS_API_KEY || "");
   const ipnSecret = String(env.NOWPAYMENTS_IPN_SECRET || "");
   if (!apiKey || !ipnSecret) return json({ error: "payment_provider_not_configured" }, 503);
+
+  const selectedCurrency = String(input.payCurrency || "").trim().toLowerCase();
+  if (selectedCurrency) {
+    let availableCurrencies: string[];
+    try {
+      const availableResponse = await fetch("https://api.nowpayments.io/v1/currencies", {
+        headers: { "x-api-key": apiKey, accept: "application/json" },
+      });
+      const availablePayload = await availableResponse.json<any>().catch(() => null);
+      if (!availableResponse.ok || !availablePayload) return json({ error: "payment_currency_list_unavailable" }, 503);
+      availableCurrencies = normalizeNowPaymentsCurrencies(availablePayload);
+    } catch {
+      return json({ error: "payment_currency_list_unavailable" }, 503);
+    }
+    if (!availableCurrencies.includes(selectedCurrency)) return json({ error: "payment_currency_unavailable" }, 400);
+  }
 
   const checkoutId = id("chk");
   const reference = `ASSIST-MKA-${crypto.randomUUID().replace(/-/g, "").slice(0, 20)}`;
@@ -2764,15 +2845,15 @@ async function startAssistNowPaymentsCheckout(input: {
   const response = await fetch("https://api.nowpayments.io/v1/invoice", {
     method: "POST",
     headers: { "content-type": "application/json", "x-api-key": apiKey },
-    body: JSON.stringify({
-      price_amount: canonicalAmountMinor / 100,
-      price_currency: "usd",
-      order_id: reference,
-      order_description: `Mkety Assist ${reference}`,
-      ipn_callback_url: `https://${env.PORTAL_CNAME_TARGET}/api/payment/nowpayments/webhook`,
-      success_url: `https://${env.PORTAL_CNAME_TARGET}/payment/return?reference=${encodeURIComponent(reference)}`,
-      cancel_url: `https://${env.PORTAL_CNAME_TARGET}/payment/return?reference=${encodeURIComponent(reference)}`,
-    }),
+    body: JSON.stringify(buildNowPaymentsInvoicePayload({
+      amountUsd: canonicalAmountMinor / 100,
+      currency: selectedCurrency,
+      reference,
+      description: `Mkety Assist ${reference}`,
+      callbackUrl: `https://${env.PORTAL_CNAME_TARGET}/api/payment/nowpayments/webhook`,
+      successUrl: `https://${env.PORTAL_CNAME_TARGET}/payment/return?reference=${encodeURIComponent(reference)}`,
+      cancelUrl: `https://${env.PORTAL_CNAME_TARGET}/payment/return?reference=${encodeURIComponent(reference)}`,
+    })),
   });
   const payload = await response.json<any>().catch(() => null);
   const providerInvoiceId = String(payload?.id || payload?.invoice_id || "").trim();
@@ -2783,8 +2864,8 @@ async function startAssistNowPaymentsCheckout(input: {
   }
 
   await env.DB.prepare(
-    "UPDATE payment_checkouts SET provider_payment_id=?,provider_amount_minor=?,provider_currency=? WHERE id=? AND status='pending'",
-  ).bind(providerInvoiceId, canonicalAmountMinor, "USD", checkoutId).run();
+    "UPDATE payment_checkouts SET provider_invoice_id=?,provider_pay_currency=?,provider_amount_minor=?,provider_currency=? WHERE id=? AND status='pending'",
+  ).bind(providerInvoiceId, selectedCurrency || null, canonicalAmountMinor, "USD", checkoutId).run();
 
   return json({
     ok: true,
@@ -2800,6 +2881,9 @@ async function startAssistNowPaymentsCheckout(input: {
     canonicalCurrency: "USD",
     checkoutAmount: canonicalAmountMinor / 100,
     checkoutCurrency: "USD",
+    payCurrency: selectedCurrency || null,
+    isFixedRate: true,
+    feePaidByUser: true,
   }, 201);
 }
 
@@ -3011,11 +3095,9 @@ async function handleNowPaymentsPaymentWebhook(request: Request, env: Env): Prom
   }
 
   const status = String(payload.payment_status || "").toLowerCase();
-  if (status !== "finished") return json({ ok: true, settled: false, status });
-
   const paymentId = String(payload.payment_id || "");
   const reference = String(payload.order_id || "");
-  if (!paymentId || !reference) return json({ error: "invalid_payment_payload" }, 400);
+  if (!reference || (status === "finished" && !/^\d{1,24}$/.test(paymentId))) return json({ error: "invalid_payment_payload" }, 400);
 
   const checkout = await env.DB.prepare(
     "SELECT * FROM payment_checkouts WHERE reference=? AND provider='nowpayments' LIMIT 1",
@@ -3025,12 +3107,28 @@ async function handleNowPaymentsPaymentWebhook(request: Request, env: Env): Prom
 
   const actualAmountMinor = parsePaymentAmountMinor(payload.price_amount);
   const expectedAmountMinor = Number(checkout.canonical_amount_minor || 0);
-  if (actualAmountMinor + 1 < expectedAmountMinor) return json({ error: "payment_quote_mismatch" }, 400);
+  if (actualAmountMinor !== expectedAmountMinor) return json({ error: "payment_quote_mismatch" }, 400);
+
+  const actualPaidFiatMinor = payload.actually_paid_fiat == null ? null : parsePaymentAmountMinor(payload.actually_paid_fiat);
+  const payCurrency = String(payload.pay_currency || "").trim().toLowerCase() || null;
+  if (status !== "finished") {
+    await env.DB.prepare(
+      `UPDATE payment_checkouts
+       SET provider_payment_id=COALESCE(?,provider_payment_id),provider_event_id=COALESCE(?,provider_event_id),
+           provider_payment_status=?,provider_pay_currency=COALESCE(?,provider_pay_currency),
+           provider_actual_paid_fiat_minor=COALESCE(?,provider_actual_paid_fiat_minor)
+       WHERE id=? AND status IN ('pending','failed')`,
+    ).bind(paymentId || null, paymentId || null, status || "unknown", payCurrency, actualPaidFiatMinor, checkout.id).run();
+    return json({ ok: true, settled: false, status });
+  }
+  if (!paymentId) return json({ error: "invalid_payment_payload" }, 400);
 
   const settlementKey = `nowpayments:${paymentId}`;
   const updated = await env.DB.prepare(
-    "UPDATE payment_checkouts SET status='paid',provider_payment_id=?,provider_event_id=?,settled_at=?,settlement_key=? WHERE id=? AND status IN ('pending','failed')",
-  ).bind(paymentId, paymentId, unix(), settlementKey, checkout.id).run();
+    `UPDATE payment_checkouts SET status='paid',provider_payment_id=?,provider_event_id=?,provider_payment_status='finished',
+       provider_pay_currency=COALESCE(?,provider_pay_currency),provider_actual_paid_fiat_minor=COALESCE(?,provider_actual_paid_fiat_minor),
+       settled_at=?,settlement_key=? WHERE id=? AND status IN ('pending','failed')`,
+  ).bind(paymentId, paymentId, payCurrency, actualPaidFiatMinor, unix(), settlementKey, checkout.id).run();
 
   return json({ ok: true, settled: Boolean(updated.meta.changes), duplicate: !updated.meta.changes });
 }
@@ -3080,7 +3178,7 @@ async function verifyAssistPaymentCheckout(env: Env, checkout: any, submittedPay
   if (!["pending", "failed"].includes(String(checkout.status))) return json({ error: "payment_not_verifiable" }, 409);
 
   if (String(checkout.provider) === "nowpayments") {
-    const paymentId = String(submittedPaymentId || "").trim();
+    const paymentId = String(submittedPaymentId || checkout.provider_payment_id || "").trim();
     if (!/^\d{1,24}$/.test(paymentId)) return json({ error: "provider_payment_id_required" }, 400);
     const apiKey = String(env.NOWPAYMENTS_API_KEY || "");
     if (!apiKey) return json({ error: "payment_provider_not_configured" }, 503);
@@ -3098,14 +3196,32 @@ async function verifyAssistPaymentCheckout(env: Env, checkout: any, submittedPay
     const actualAmountMinor = parsePaymentAmountMinor(payment.price_amount);
     if (actualAmountMinor !== Number(checkout.canonical_amount_minor || 0)) return json({ error: "provider_amount_mismatch" }, 409);
     const providerStatus = String(payment.payment_status || "").toLowerCase();
+    const actualCurrency = String(payment.pay_currency || "").toLowerCase();
+    if (checkout.provider_pay_currency && actualCurrency && actualCurrency !== String(checkout.provider_pay_currency).toLowerCase()) {
+      return json({ error: "provider_currency_mismatch" }, 409);
+    }
+    const actualPaidFiatMinor = payment.actually_paid_fiat == null ? null : parsePaymentAmountMinor(payment.actually_paid_fiat);
+    await env.DB.prepare(
+      `UPDATE payment_checkouts
+       SET provider_payment_id=?,provider_event_id=?,provider_payment_status=?,
+           provider_pay_currency=COALESCE(?,provider_pay_currency),
+           provider_actual_paid_fiat_minor=COALESCE(?,provider_actual_paid_fiat_minor)
+       WHERE id=? AND status IN ('pending','failed')`,
+    ).bind(paymentId, paymentId, providerStatus || "unknown", actualCurrency || null, actualPaidFiatMinor, checkout.id).run();
     if (providerStatus !== "finished") {
-      return json({ status: providerStatus === "expired" || providerStatus === "failed" ? "failed" : "pending" });
+      return json({
+        status: providerStatus === "expired" || providerStatus === "failed" ? "failed" : "pending",
+        providerStatus: providerStatus || "unknown",
+        actualPaidFiatMinor,
+      });
     }
     const updated = await env.DB.prepare(
       `UPDATE payment_checkouts
-       SET status='paid',provider_payment_id=?,provider_event_id=?,settled_at=?,settlement_key=?
+       SET status='paid',provider_payment_id=?,provider_event_id=?,provider_payment_status='finished',
+           provider_pay_currency=COALESCE(?,provider_pay_currency),
+           provider_actual_paid_fiat_minor=COALESCE(?,provider_actual_paid_fiat_minor),settled_at=?,settlement_key=?
        WHERE id=? AND status IN ('pending','failed')`,
-    ).bind(paymentId, paymentId, unix(), `nowpayments:${paymentId}`, checkout.id).run();
+    ).bind(paymentId, paymentId, actualCurrency || null, actualPaidFiatMinor, unix(), `nowpayments:${paymentId}`, checkout.id).run();
     const current = await env.DB.prepare("SELECT status FROM payment_checkouts WHERE id=? LIMIT 1").bind(checkout.id).first<any>();
     return json({ status: String(current?.status || "pending"), settled: Boolean(updated.meta.changes), duplicate: !updated.meta.changes });
   }
@@ -3831,8 +3947,8 @@ class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=utf-8" } });
+function json(data: unknown, status = 200, extraHeaders: Record<string, string> = {}) {
+  return new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=utf-8", ...extraHeaders } });
 }
 
 function assistEntryPage(hostedSuffix: string) {
