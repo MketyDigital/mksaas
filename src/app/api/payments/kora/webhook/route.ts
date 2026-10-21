@@ -1,5 +1,5 @@
 import { forwardOriginalProviderWebhook } from '@/features/payments/external-webhook-forwarder';
-import { retrieveKoraCharge, verifyKoraWebhook } from '@/features/payments/kora';
+import { resolveKoraPaidAmount, retrieveKoraCharge, verifyKoraWebhook } from '@/features/payments/kora';
 import { resolveMketyPaymentRoute } from '@/features/payments/reference';
 import { routeVerifiedMketyPayment } from '@/features/payments/settlement-router';
 import { createLogger } from '@/shared/lib/logger';
@@ -82,7 +82,7 @@ export async function POST(request: Request) {
         provider_payment_id: String(verified.transaction_reference ?? verified.payment_reference ?? verified.reference ?? reference),
         provider_event_id: String(verified.transaction_reference ?? verified.reference ?? reference),
         status,
-        amount: verified.amount_paid ?? verified.amount,
+        amount: resolveKoraPaidAmount(verified),
         currency: String(verified.currency ?? '').toUpperCase(),
       });
       const attestation = await signAssistAttestation(body, brokerSecret);
@@ -102,7 +102,7 @@ export async function POST(request: Request) {
       reference,
       providerPaymentId: String(verified.transaction_reference ?? verified.payment_reference ?? verified.reference ?? reference),
       providerEventId: String(verified.transaction_reference ?? verified.reference ?? reference),
-      amount: verified.amount_paid ?? verified.amount,
+      amount: resolveKoraPaidAmount(verified),
       currency: verified.currency,
       status,
       providerData: verified,
