@@ -7,8 +7,8 @@ import {
   getConfiguredMketyFxRates,
   getEnabledMketyFlutterwaveCurrencies,
   quoteFlutterwaveCollection,
-  verifyFlutterwaveStandardTransaction,
   verifyFlutterwavePaymentByReference,
+  verifyFlutterwaveStandardTransaction,
 } from './flutterwave-standard';
 
 describe('Flutterwave v3 shared payments', () => {
