@@ -241,3 +241,21 @@ export async function verifyFlutterwaveStandardTransaction(input: {
   }
   return payload.data;
 }
+
+export async function verifyFlutterwavePaymentByReference(input: {
+  reference: string;
+  secretKey: string;
+  fetchImpl?: typeof fetch;
+}): Promise<Record<string, unknown>> {
+  const fetchImpl = input.fetchImpl ?? fetch;
+  const url = new URL('https://api.flutterwave.com/v3/transactions/verify_by_reference');
+  url.searchParams.set('tx_ref', input.reference);
+  const response = await fetchImpl(url, {
+    headers: { Authorization: `Bearer ${input.secretKey}`, 'Content-Type': 'application/json' },
+  });
+  const payload = (await response.json().catch(() => null)) as { status?: string; data?: Record<string, unknown> } | null;
+  if (!response.ok || payload?.status !== 'success' || !payload.data) {
+    throw new Error('Flutterwave transaction reference verification failed.');
+  }
+  return payload.data;
+}

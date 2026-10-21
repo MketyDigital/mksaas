@@ -44,3 +44,8 @@ export async function retrieveKoraCharge(input: {
   if (!response.ok || payload?.status !== true || !payload.data) throw new Error('Kora charge verification failed.');
   return payload.data;
 }
+
+export function resolveKoraPaidAmount(verified: Record<string, unknown>) {
+  const paid = Number(verified.amount_paid);
+  return Number.isFinite(paid) && paid > 0 ? verified.amount_paid : verified.amount;
+}

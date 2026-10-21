@@ -41,6 +41,7 @@ const brand=document.getElementById('brand'),who=document.getElementById('who'),
   topTitle=document.getElementById('topTitle');
 const APP=${initial};
 const state={section:'dashboard',assistants:[],knowledge:[],usage:null,conversations:[],handoffs:[],reminders:[],humanApprovals:[],humanOperations:[],humanOpsDestinations:[],humanOpsMembers:[],humanOpsPermissions:{},automation:{paused:false},features:{},account:{status:'active',billingStatus:'pending',userControl:{state:'active'}}};
+let paymentWatchTimer=null;
 const sections=['dashboard','assistants','knowledge','conversations','handoffs','human-operations','reminders','usage','api','team','settings'];
 const titles={dashboard:'Dashboard',assistants:'Assistants',knowledge:'Knowledge',conversations:'Conversations',handoffs:'Human Handoff','human-operations':'Human Operations',reminders:'Reminders',usage:'Usage & MKredit',api:'API Access',team:'Team',settings:'Settings'};
 if(APP.brandColor&&/^#[0-9a-fA-F]{6}$/.test(APP.brandColor))document.documentElement.style.setProperty('--brand',APP.brandColor);
@@ -325,6 +326,19 @@ function launchFlutterwave(data){
   const widgetUrl=String(data.widgetUrl),hostedUrl=String(data.hostedUrl||'');
   openModal('<div class="spread"><h2>Pay with crypto</h2><button class="btn" id="cryptoClose">Close</button></div><p class="muted">Secure NOWPayments checkout. Credits are added automatically only after NOWPayments confirms the payment.</p><iframe src="'+esc(widgetUrl)+'" title="NOWPayments secure cryptocurrency checkout" style="width:100%;height:640px;border:0;border-radius:12px;background:white" allow="clipboard-write; payment" referrerpolicy="strict-origin-when-cross-origin"></iframe>'+(hostedUrl?'<p class="muted">If the secure checkout does not load, <a href="'+esc(hostedUrl)+'" target="_blank" rel="noopener noreferrer">open it in a new tab</a>.</p>':''));
   cryptoClose.onclick=()=>{closeModal();loadCheckouts().catch(()=>{})};
+  if(paymentWatchTimer)clearInterval(paymentWatchTimer);
+  const paymentReference=String(data.reference||''),watchStarted=Date.now();
+  paymentWatchTimer=setInterval(async()=>{
+   try{
+    const result=await api('/api/billing/checkouts'),checkout=(result.checkouts||[]).find(x=>x.reference===paymentReference);
+    if(checkout?.status==='paid'){
+     clearInterval(paymentWatchTimer);paymentWatchTimer=null;
+     if(dialog.querySelector('#cryptoClose'))closeModal();
+     toastMsg('Payment confirmed. MKredit has been added to your portal.');
+     await refresh();
+    }else if(Date.now()-watchStarted>30*60*1000){clearInterval(paymentWatchTimer);paymentWatchTimer=null}
+   }catch{}
+  },5000);
   return;
  }
  if(data.checkoutExperience==='inline'&&data.inline){
@@ -410,9 +424,22 @@ async function buyCredits(){
   }catch(e){topupStart.disabled=false;topupMsg.textContent=e.message}};
  }catch(e){toastMsg(e.message)}
 }
+async function verifyCustomerPayment(reference,provider){
+ let providerPaymentId='';
+ if(provider==='nowpayments'){
+  providerPaymentId=String(window.prompt('Enter the NOWPayments payment ID from your payment details. Your Assist payment reference is already matched to this checkout.')||'').trim();
+  if(!providerPaymentId)return;
+ }
+ const result=await api('/api/billing/payment/verify',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({reference,providerPaymentId})});
+ await loadCheckouts();
+ toastMsg(result.status==='paid'?'Payment verified. MKredit has been added.':'Payment is still processing. Check again shortly.');
+}
 async function loadCheckouts(){try{
  const d=await api('/api/billing/checkouts');const list=d.checkouts||[];
- checkoutBox.innerHTML=list.length?'<table class="table"><thead><tr><th>Funding</th><th>Credits</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead><tbody>'+list.slice(0,10).map(x=>'<tr><td>'+esc(x.purchase_type==='plan'?'Monthly credits':'Added credits')+'</td><td>'+esc(x.credits)+'</td><td>'+esc(x.provider_currency||x.canonical_currency||'USD')+' '+esc(((Number(x.provider_amount_minor||x.canonical_amount_minor||0))/100).toFixed(2))+'</td><td><span class="pill '+(x.status==='paid'?'ok':x.status==='pending'?'warn':'')+'">'+esc(x.status)+'</span></td><td>'+new Date(x.created_at*1000).toLocaleString()+'</td></tr>').join('')+'</tbody></table>':'No payments yet.';
+ state.checkouts=list;
+ if(!checkoutBox)return;
+ checkoutBox.innerHTML=list.length?'<table class="table"><thead><tr><th>Funding</th><th>Credits</th><th>Amount</th><th>Status / reference</th><th>Date</th></tr></thead><tbody>'+list.slice(0,10).map(x=>'<tr><td>'+esc(x.purchase_type==='plan'?'Monthly credits':'Added credits')+'</td><td>'+esc(x.credits)+'</td><td>'+esc(x.provider_currency||x.canonical_currency||'USD')+' '+esc(((Number(x.provider_amount_minor||x.canonical_amount_minor||0))/100).toFixed(2))+'</td><td><span class="pill '+(x.status==='paid'?'ok':x.status==='pending'?'warn':'')+'">'+esc(x.status)+'</span><div class="muted">'+esc(x.reference)+'</div>'+(x.status==='pending'||x.status==='failed'?'<button class="btn" data-verify-assist-payment="'+esc(x.reference)+'" data-payment-provider="'+esc(x.provider)+'">Verify payment</button>':'')+'</td><td>'+new Date(x.created_at*1000).toLocaleString()+'</td></tr>').join('')+'</tbody></table><p class="muted">If a payment succeeded but remains pending, use Verify payment. For crypto payments, also enter the NOWPayments payment ID shown by the provider.</p>':'No payments yet.';
+ checkoutBox.querySelectorAll('[data-verify-assist-payment]').forEach(button=>button.onclick=async()=>{button.disabled=true;try{await verifyCustomerPayment(button.dataset.verifyAssistPayment,button.dataset.paymentProvider)}catch(e){toastMsg(e.message)}finally{button.disabled=false}});
 }catch(e){checkoutBox.textContent=e.message}}
 async function changePassword(){
  openModal('<h2>Change password</h2><div class="field"><label>Current password</label><input class="input" id="currentPassword" type="password" autocomplete="current-password"></div><div class="field"><label>New password</label><input class="input" id="newPassword" type="password" minlength="12" autocomplete="new-password"></div><p id="passwordMsg" class="muted"></p><div class="row"><button class="btn primary" id="passwordSave">Update password</button><button class="btn" id="passwordCancel">Cancel</button></div>');
@@ -429,7 +456,23 @@ async function manageSessions(){
  }catch(e){toastMsg(e.message)}
 }
 async function linkTelegram(){try{const d=await api('/api/auth/telegram/link/start',{method:'POST'});location.href=d.url}catch(e){toastMsg(e.message)}}
-refresh().catch(e=>{content.innerHTML='<div class="card"><h2>Could not load console</h2><p class="muted">'+esc(e.message)+'</p></div>'});
+async function resumePaymentReturn(){
+ const url=new URL(location.href),reference=url.searchParams.get('payment');
+ if(!reference)return;
+ url.searchParams.delete('payment');url.searchParams.delete('status');history.replaceState({},'',url.toString());
+ await loadCheckouts();
+ const checkout=(state.checkouts||[]).find(x=>x.reference===reference);
+ if(checkout?.provider==='nowpayments'){
+  toastMsg(checkout.status==='paid'?'Payment confirmed. MKredit is available.':'Payment received. NOWPayments is confirming it; use Verify payment in your funding history if it remains pending.');
+  return;
+ }
+ try{
+  const result=await api('/api/billing/payment/verify',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({reference})});
+  await loadCheckouts();
+  toastMsg(result.status==='paid'?'Payment confirmed. MKredit is available.':'Payment is still processing. Your portal is ready; check again shortly.');
+ }catch(e){toastMsg('Returned from checkout. Payment status is being confirmed; you can verify it from Funding history if it stays pending.')}
+}
+refresh().then(resumePaymentReturn).catch(e=>{content.innerHTML='<div class="card"><h2>Could not load console</h2><p class="muted">'+esc(e.message)+'</p></div>'});
 </script>
 </body></html>`;
 }
@@ -563,12 +606,25 @@ function renderCreditActivity(){
   if(!creditActivityBox)return;
   const summaries=window.creditActivitySummary||{};
   creditSummary.innerHTML=[['Customers',summaries.customerCount||0],['Available MKredit',formatMkredit(summaries.balance)],['Granted lifetime',formatMkredit(summaries.lifetimeGranted)],['Consumed lifetime',formatMkredit(summaries.lifetimeConsumed)]].map(([label,value])=>'<div class="card"><div class="muted">'+esc(label)+'</div><div class="metric">'+esc(value)+'</div></div>').join('');
-  creditActivityBox.innerHTML=creditActivityItems.length?'<table class="table"><thead><tr><th>When</th><th>Customer</th><th>Transaction</th><th>For / how</th><th>MKredit</th><th>Balance after</th></tr></thead><tbody>'+creditActivityItems.map(item=>{
+  creditActivityBox.innerHTML=creditActivityItems.length?'<table class="table"><thead><tr><th>When</th><th>Customer</th><th>Transaction</th><th>For / how</th><th>MKredit</th><th>Balance after</th><th>Ops</th></tr></thead><tbody>'+creditActivityItems.map(item=>{
     const amount=item.record_type==='payment'&&item.payment_status!=='paid'?'—':formatMkredit(item.amount);
-    return '<tr><td>'+new Date(Number(item.created_at)*1000).toLocaleString()+'</td><td><strong>'+esc(item.customer_name||item.customer_id)+'</strong><div class="muted">'+esc(item.customer_id)+'</div></td><td>'+esc(activityDescription(item))+'<div class="muted">'+esc(item.reference_id||item.id)+'</div></td><td>'+activityDetails(item)+'</td><td>'+esc(amount)+(item.record_type==='payment'&&item.payment_status!=='paid'?'<div class="muted">No credit applied</div>':'')+'</td><td>'+esc(item.balance_after==null?'—':formatMkredit(item.balance_after))+'</td></tr>';
+    return '<tr><td>'+new Date(Number(item.created_at)*1000).toLocaleString()+'</td><td><strong>'+esc(item.customer_name||item.customer_id)+'</strong><div class="muted">'+esc(item.customer_id)+'</div></td><td>'+esc(activityDescription(item))+'<div class="muted">'+esc(item.reference_id||item.id)+'</div></td><td>'+activityDetails(item)+'</td><td>'+esc(amount)+(item.record_type==='payment'&&item.payment_status!=='paid'?'<div class="muted">No credit applied</div>':'')+'</td><td>'+esc(item.balance_after==null?'—':formatMkredit(item.balance_after))+'</td><td>'+(item.record_type==='payment'&&['pending','failed'].includes(String(item.payment_status))?'<button class="btn" data-ops-verify-payment="'+esc(item.reference_id)+'" data-payment-provider="'+esc(item.payment_provider)+'">Verify</button>':'—')+'</td></tr>';
   }).join('')+'</tbody></table>':'<div class="card">No matching credit activity.</div>';
+  creditActivityBox.querySelectorAll('[data-ops-verify-payment]').forEach(button=>button.onclick=()=>verifyOpsPayment(button.dataset.opsVerifyPayment,button.dataset.paymentProvider));
   loadOlderActivity.disabled=creditActivityNextOffset==null;
   activityPageStatus.textContent=creditActivityItems.length?creditActivityItems.length+' records shown'+(creditActivityNextOffset!=null?' · more available':''):' ';
+}
+async function verifyOpsPayment(reference,provider){
+ let providerPaymentId='';
+ if(provider==='nowpayments'){
+  providerPaymentId=String(window.prompt('Enter the NOWPayments payment ID from its transaction record.')||'').trim();
+  if(!providerPaymentId)return;
+ }
+ try{
+  const result=await api('/api/ops/payment/verify',{method:'POST',body:JSON.stringify({reference,providerPaymentId})});
+  toastOps(result.status==='paid'?'Provider confirmed the payment; the Assist ledger has granted it once.':'Provider still reports processing. No credit was added.');
+  await loadCreditActivity(false);
+ }catch(e){toastOps(e.message)}
 }
 async function loadCreditActivity(append=false){
   const requestId=++creditActivityRequestId;
