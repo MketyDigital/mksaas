@@ -73,10 +73,10 @@
 
 **Interfaces:**
 - Consumes: hostname resolution contract from Task 1 and records from Task 2.
-- Produces: `fetch(request, env)` that serves apex service content or dispatches an active hostname to an allow-listed deployment in the Mkety Workers for Platforms namespace. The Cloudflare provider implements the existing `DeploymentProviderAdapter` contract and uses a namespace name from server-only configuration.
+- Produces: `fetch(request, env)` that serves apex service content or dispatches an active hostname to an allow-listed deployment in the Mkety Workers for Platforms namespace. `CloudflareDispatchAdapter implements DeploymentProviderAdapter`; `CustomerDeploymentArtifactSource.load(context): Promise<CloudflareCandidateArtifact>` loads only an immutable tenant-owned bundle from the authorized artifact store. The namespace name is server-only configuration.
 
-- [ ] **Step 1: Test** apex response, active deployment dispatch, unknown/suspended host rejection, path/query preservation, wrong Host header, and no request-selected namespace/script id.
-- [ ] **Step 2: Implement** the dedicated dispatch Worker and a separate Workers for Platforms deployment adapter; keep `cloudflare-candidate.ts` and its proof-only artifact unchanged.
+- [ ] **Step 1: Test** artifact size/module/path validation plus apex response, active deployment dispatch, unknown/suspended host rejection, path/query preservation, wrong Host header, and no request-selected namespace/script id.
+- [ ] **Step 2: Implement** the dedicated dispatch Worker, tenant-scoped artifact source, and separate Workers for Platforms deployment adapter; keep `cloudflare-candidate.ts` and its proof-only artifact unchanged.
 - [ ] **Step 3: Validate** dispatch namespace/script identifiers and confirm the configured namespace is present before any customer deployment request can run.
 - [ ] **Step 4: Run** focused Worker/provider tests and Wrangler dry-run.
 
