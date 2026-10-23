@@ -17,7 +17,7 @@ export interface PublicAIModelDefinition {
   status: PublicAIModelStatus;
 }
 
-interface PublicAIProviderModelDefinition extends MketyAiProviderModelDefinition {}
+type PublicAIProviderModelDefinition = MketyAiProviderModelDefinition;
 
 export const PUBLIC_AI_MODEL_REGISTRY: Record<PublicAIProviderId, PublicAIProviderModelDefinition> =
   MKETY_AI_PROVIDER_MODEL_CATALOG;
