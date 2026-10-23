@@ -10,7 +10,7 @@ function safeAdminMutationMessage(error: unknown): string {
     .slice(0, 240);
 
   if (
-    /postgres|hyperdrive|sqlstate|relation |column |database|socket|econn|connection|prepared statement|transaction/i.test(message)
+    /postgres|hyperdrive|sqlstate|relation |column |database|socket|econn|connection reset|connection refused|connection terminated|connection timed out|prepared statement|transaction/i.test(message)
   ) {
     return 'The database operation failed. No unsafe details were exposed. Please retry once; if it persists, use the admin action reference shown here.';
   }
@@ -42,10 +42,15 @@ export async function runPlatformControlMutation(input: {
   try {
     await withServerActionDatabase(input.work);
   } catch (error) {
-    console.error(`[platform-control:${input.action}]`, error);
+    const adminReference = crypto.randomUUID();
+    console.error(`[platform-control:${input.action}:${adminReference}]`, {
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+      message: safeAdminMutationMessage(error),
+    });
     redirect(withQuery(standalonePlatformControlPath(input.path), {
       adminStatus: 'error',
       adminAction: input.action,
+      adminReference,
       adminMessage: safeAdminMutationMessage(error),
     }));
   }

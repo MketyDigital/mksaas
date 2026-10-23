@@ -149,7 +149,7 @@ export function PublicAiControlPanel({
               </label>
               <label className="text-sm font-medium">Endpoint
                 <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="endpoint" placeholder="https://resource.services.ai.azure.com" />
-                <span className="mt-1 block text-xs font-normal text-muted-foreground">For Azure OpenAI / Foundry, use the resource host root only. Do not include /api/projects/...; Mkety appends the Responses API path.</span>
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">For Azure OpenAI, use the resource endpoint root. For a Foundry project, include its full endpoint ending in /api/projects/&lt;project&gt;; Mkety appends /openai/v1/responses.</span>
               </label>
               <label className="text-sm font-medium">Azure deployment
                 <input className="mt-2 w-full rounded-lg border bg-background px-3 py-2" name="deployment" placeholder="gpt-5.6-sol-1" />
