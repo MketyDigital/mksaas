@@ -51,7 +51,8 @@ jobs:
             throw new Error('The frozen Public AI release branch head changed; stopping before production writes.');
           }
           NODE
-          git fetch --no-tags origin "$VERIFIED_RELEASE_SHA" --depth=2
+          git fetch --no-tags origin "refs/heads/codex/public-ai-release-base-20261023:refs/remotes/origin/codex/public-ai-release-base-20261023"
+          [ "$(git rev-parse "origin/codex/public-ai-release-base-20261023")" = "$VERIFIED_RELEASE_SHA" ] || { echo 'Fetched release branch does not match the frozen release SHA.'; exit 1; }
           git merge-base --is-ancestor "$PRODUCTION_BASE_SHA" "$VERIFIED_RELEASE_SHA" || { echo 'Release is not based on the inspected production source.'; exit 1; }
           candidate_sha="$(git rev-parse "$VERIFIED_RELEASE_SHA^2" 2>/dev/null)" || { echo 'Expected a reviewed release merge commit with a candidate source parent.'; exit 1; }
           [ "$(git rev-parse "$candidate_sha^{tree}")" = "$(git rev-parse "$VERIFIED_RELEASE_SHA^{tree}")" ] || { echo 'Promoted tree differs from candidate-tested tree.'; exit 1; }
