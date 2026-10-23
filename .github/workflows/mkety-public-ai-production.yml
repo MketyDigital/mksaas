@@ -294,11 +294,17 @@ jobs:
             -c /tmp/mkety-public-ai-cookies -b /tmp/mkety-public-ai-cookies \
             -H 'Content-Type: application/json' -H 'Origin: https://mkety.com' \
             --data '{"message":"Reply with the single word ready."}' \
+            -D /tmp/mkety-public-ai-headers.txt \
             -o /tmp/mkety-public-ai-response.json -w '%{http_code}' \
             'https://mkety.com/api/public/assistant' || true)"
           [ "$code" = '200' ] || { echo "Live Public AI smoke returned HTTP $code."; exit 1; }
           node <<'NODE'
+          const fs=require('node:fs');
           const x=require('/tmp/mkety-public-ai-response.json');
+          const headers=fs.readFileSync('/tmp/mkety-public-ai-headers.txt','utf8');
           if(typeof x.answer!=='string'||!x.answer.trim()||!x.conversationId) throw new Error('Live Public AI returned no usable response.');
-          console.log('Live Public AI endpoint returned an answer and conversation ID.');
+          if(/x-mkety-ai-result:\s*fallback/i.test(headers)||/temporarily unavailable/i.test(x.answer)) {
+            throw new Error('Live Public AI returned its deterministic unavailable fallback.');
+          }
+          console.log('Live Public AI returned an actual provider answer and conversation ID.');
           NODE
