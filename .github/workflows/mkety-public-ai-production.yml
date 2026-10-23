@@ -1,0 +1,260 @@
+name: Mkety Public AI Production Hotfix
+
+on:
+  push:
+    branches:
+      - codex/public-ai-release-base-20261023
+    paths:
+      - '.github/workflows/mkety-public-ai-production.yml'
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  authorize:
+    if: contains(github.event.head_commit.message, '[public-ai-production]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      verified_sha: \${{ steps.release.outputs.sha }}
+      candidate_sha: \${{ steps.release.outputs.candidate_sha }}
+    env:
+      GH_TOKEN: \${{ github.token }}
+      CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: \${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PRODUCTION_BASE_SHA: 6a8cc8f48082ee9ed908c8fb8e9b6b54b2d8593c
+      PRODUCTION_WORKER: mkety-platform
+      EXPECTED_ACTIVE_VERSION: 1e41bd8a-fad5-4941-a9c3-d387b5706601
+    steps:
+      - name: Check out exact production release
+        uses: actions/checkout@v4
+        with:
+          ref: \${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Validate release, candidate checks, and live Worker baseline
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF" = 'refs/heads/codex/public-ai-release-base-20261023' ] || { echo 'Unexpected release branch.'; exit 1; }
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'Release SHA is malformed.'; exit 1; }
+          git merge-base --is-ancestor "$PRODUCTION_BASE_SHA" "$GITHUB_SHA" || { echo 'Release is not based on the inspected production source.'; exit 1; }
+          candidate_sha="$(git rev-parse "$GITHUB_SHA^2" 2>/dev/null)" || { echo 'Expected a reviewed merge commit with a candidate source parent.'; exit 1; }
+          [ "$(git rev-parse "$candidate_sha^{tree}")" = "$(git rev-parse "$GITHUB_SHA^{tree}")" ] || { echo 'Promoted tree differs from candidate-tested tree.'; exit 1; }
+
+          changed="$(git diff --name-only "$PRODUCTION_BASE_SHA" "$GITHUB_SHA")"
+          CHANGED_PATHS="$changed" node <<'NODE'
+          const paths=String(process.env.CHANGED_PATHS||'').split(/\r?\n/).filter(Boolean);
+          const allowed=p =>
+            p.startsWith('src/features/public-assistant/') ||
+            p==='src/features/ai-runtime/providers/external.test.ts' ||
+            p==='src/features/ai-runtime/server/provider-connections.ts' ||
+            p.startsWith('src/shared/ai/') ||
+            p==='src/shared/db/migrations/0044_public_ai_provider_connections.sql' ||
+            p==='src/shared/db/migrations/0044_public_ai_provider_connections.test.ts' ||
+            p==='src/shared/db/migrations/meta/0044_snapshot.json' ||
+            p==='src/shared/db/migrations/meta/_journal.json' ||
+            p==='src/shared/db/platform-control-mutation.ts' ||
+            p==='src/shared/db/platform-control-mutation.test.ts' ||
+            p==='src/shared/db/vite-runtime-alias.test.ts' ||
+            p==='src/shared/db/schema/platform-app-experience.ts' ||
+            p==='ops/coolify-migration/public-ai.Dockerfile' ||
+            p==='ops/coolify-migration/run-public-ai.sh' ||
+            p==='scripts/configure-public-ai-production.ts' ||
+            p==='.github/workflows/mkety-public-ai-provider-probe.yml' ||
+            p==='.github/workflows/mkety-public-candidate-deploy.yml' ||
+            p==='.github/workflows/mkety-coolify-production-db-executor.yml' ||
+            p==='.github/workflows/mkety-public-ai-production.yml';
+          const denied=paths.filter(p=>!allowed(p));
+          if(denied.length){console.error('Release contains paths outside the Public AI allowlist: '+denied.join(', '));process.exit(1);}
+          if(paths.some(p=>p.startsWith('customer-apps/assist/')||p.includes('hostname')||p.includes('domain')||p.includes('media'))) {
+            throw new Error('Release contains an excluded Assist, hostname, domain, or Media path.');
+          }
+          console.log('Release scope is limited to Public AI, its migration, and release workflow files.');
+          NODE
+
+          for workflow in mkety-public-candidate-deploy.yml mkety-public-ai-provider-probe.yml mkety-migration-baseline.yml; do
+            response="$(curl --proto '=https' --tlsv1.2 -fsS \
+              -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$candidate_sha&status=success&per_page=20")"
+            RESPONSE="$response" WORKFLOW="$workflow" CANDIDATE_SHA="$candidate_sha" node <<'NODE'
+          const x=JSON.parse(process.env.RESPONSE||'{}');
+          const good=(x.workflow_runs||[]).some(r=>
+            r.head_sha===process.env.CANDIDATE_SHA &&
+            r.conclusion==='success' &&
+            r.event==='pull_request' &&
+            (r.pull_requests||[]).some(p=>p.base?.ref==='codex/public-ai-release-base-20261023')
+          );
+          if(!good) throw new Error('Missing successful exact-SHA '+process.env.WORKFLOW+' evidence for the production-based candidate.');
+          NODE
+          done
+
+          [ -n "\${CLOUDFLARE_API_TOKEN:-}" ] || { echo 'Cloudflare API token is not configured.'; exit 1; }
+          [[ "\${CLOUDFLARE_ACCOUNT_ID:-}" =~ ^[0-9a-fA-F]{32}$ ]] || { echo 'Cloudflare account ID is malformed.'; exit 1; }
+          CLOUDFLARE_API_TOKEN="$CLOUDFLARE_API_TOKEN" CLOUDFLARE_ACCOUNT_ID="$CLOUDFLARE_ACCOUNT_ID" \
+          EXPECTED_VERSION="$EXPECTED_ACTIVE_VERSION" WORKER="$PRODUCTION_WORKER" node <<'NODE'
+          const base='https://api.cloudflare.com/client/v4/accounts/'+encodeURIComponent(process.env.CLOUDFLARE_ACCOUNT_ID)+'/workers/scripts/'+encodeURIComponent(process.env.WORKER);
+          const headers={authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN,accept:'application/json'};
+          const response=await fetch(base+'/deployments?per_page=5',{headers,signal:AbortSignal.timeout(20000)});
+          if(!response.ok) throw new Error('Could not read current production Worker deployment metadata.');
+          const body=await response.json();
+          if(body.success!==true) throw new Error('Cloudflare rejected the production Worker metadata read.');
+          const latest=body.result?.deployments?.[0];
+          const active=(latest?.versions||[]).filter(v=>Number(v.percentage)>0);
+          if(active.length!==1||active[0].version_id!==process.env.EXPECTED_VERSION||Number(active[0].percentage)!==100) {
+            throw new Error('The active Worker version changed since baseline inspection; stopping before production writes.');
+          }
+          console.log('Verified the inspected production Worker version is still active at 100%.');
+          NODE
+
+          echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "candidate_sha=$candidate_sha" >> "$GITHUB_OUTPUT"
+
+  production-db:
+    needs: authorize
+    uses: ./.github/workflows/mkety-coolify-production-db-executor.yml
+    with:
+      verified_sha: \${{ needs.authorize.outputs.verified_sha }}
+      release_branch: codex/public-ai-release-base-20261023
+      public_ai_only: true
+    secrets:
+      COOLIFY_TOKEN: \${{ secrets.COOLIFY_TOKEN }}
+
+  deploy-public-ai:
+    needs: [authorize, production-db]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: \${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: \${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      MKETY_PUBLIC_AI_VISITOR_SECRET: \${{ secrets.MKETY_PUBLIC_AI_VISITOR_SECRET }}
+      MKETY_PUBLIC_AZURE_OPENAI_API_KEY: \${{ secrets.MKETY_PUBLIC_AZURE_OPEN_AI_API_KEY || secrets.MKETY_PUBLIC_AZURE_OPENAI_API_KEY || secrets.MKETY_PUBLIC_AZURE_OPEN_AI_KEY || secrets.MKETY_PUBLIC_AZURE_OPENAI_KEY || secrets.MKETY_PUBLIC_AZURE_API_KEY || secrets.MKETY_PUBLIC_AZURE_KEY || secrets.AZURE_OPENAI_API_KEY || secrets.AZURE_AI_API_KEY }}
+      MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT: \${{ secrets.MKETY_PUBLIC_AZURE_OPEN_AI_ENDPOINT || secrets.MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT || vars.MKETY_PUBLIC_AZURE_OPEN_AI_ENDPOINT || vars.MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT }}
+      MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT: \${{ secrets.MKETY_PUBLIC_AZURE_OPEN_AI_MODEL || secrets.MKETY_PUBLIC_AZURE_OPENAI_MODEL || secrets.MKETY_PUBLIC_AZURE_OPEN_AI_DEPLOYMENT || secrets.MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT || vars.MKETY_PUBLIC_AZURE_OPEN_AI_MODEL || vars.MKETY_PUBLIC_AZURE_OPENAI_MODEL || vars.MKETY_PUBLIC_AZURE_OPEN_AI_DEPLOYMENT || vars.MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT }}
+      SKIP_ENV_VALIDATION: 'true'
+    steps:
+      - name: Check out exact production source
+        uses: actions/checkout@v4
+        with:
+          ref: \${{ needs.authorize.outputs.verified_sha }}
+          fetch-depth: 1
+
+      - name: Require the saved Azure Foundry configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variable in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID MKETY_PUBLIC_AI_VISITOR_SECRET MKETY_PUBLIC_AZURE_OPENAI_API_KEY MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT; do
+            [ -n "\${!variable:-}" ] || { echo "$variable is missing from the production release configuration."; exit 1; }
+          done
+          node -e "const u=new URL(process.env.MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT);if(u.protocol!=='https:'||!/(?:\\.openai\\.azure\\.com|\\.services\\.ai\\.azure\\.com)$/.test(u.hostname))process.exit(1)"
+          echo 'Azure Foundry release settings are present and the HTTPS endpoint is allowed.'
+
+      - name: Resolve the existing production Hyperdrive binding
+        id: hyperdrive
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 -fsS \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/hyperdrive/configs?per_page=100" \
+            -o /tmp/hyperdrive-configs.json
+          MKETY_HYPERDRIVE_ID="$(node <<'NODE'
+          const fs=require('node:fs');
+          const x=JSON.parse(fs.readFileSync('/tmp/hyperdrive-configs.json','utf8'));
+          if(x.success!==true) throw new Error('Cloudflare Hyperdrive lookup failed.');
+          const rows=(x.result||[]).filter(v=>v.name==='mkety-production-db-v2');
+          if(rows.length!==1||!rows[0].id) throw new Error('Expected exactly one production Hyperdrive binding.');
+          process.stdout.write(rows[0].id);
+          NODE
+          )"
+          echo "id=$MKETY_HYPERDRIVE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Set up pnpm and Node.js
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install exact source dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Configure production Worker without custom-domain routes
+        shell: bash
+        env:
+          MKETY_HYPERDRIVE_ID: \${{ steps.hyperdrive.outputs.id }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs=require('node:fs');
+          const config=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+          if(!process.env.MKETY_HYPERDRIVE_ID) throw new Error('Missing production Hyperdrive id.');
+          config.name='mkety-platform';
+          config.workers_dev=true;
+          config.preview_urls=true;
+          config.keep_vars=true;
+          config.vars={...(config.vars||{}),SKIP_ENV_VALIDATION:'true'};
+          config.hyperdrive=[{binding:'MKETY_DB',id:process.env.MKETY_HYPERDRIVE_ID}];
+          delete config.route;
+          delete config.routes;
+          fs.writeFileSync('wrangler.jsonc',JSON.stringify(config,null,2)+'\n');
+          NODE
+
+      - name: Build and validate production Worker package
+        run: |
+          set -euo pipefail
+          pnpm build
+          pnpm run deploy --dry-run
+
+      - name: Deploy only mkety-platform
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm run deploy 2>&1 | tee /tmp/mkety-public-ai-deploy.log
+          echo 'Uploaded only the mkety-platform Worker; no route or DNS API was invoked.'
+
+      - name: Attach Public AI runtime configuration and provider credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          put_secret() {
+            local name="$1"
+            local value="$2"
+            printf '%s' "$value" | pnpm exec wrangler secret put "$name" --name mkety-platform >/dev/null
+            echo "Configured Public AI runtime setting: $name"
+          }
+          put_secret MKETY_PUBLIC_AI_VISITOR_SECRET "$MKETY_PUBLIC_AI_VISITOR_SECRET"
+          put_secret MKETY_PUBLIC_AI_ENABLED 'true'
+          put_secret MKETY_PUBLIC_AI_PRIMARY_PROVIDER 'azure-openai'
+          put_secret MKETY_PUBLIC_AI_FALLBACK_PROVIDERS 'workers-ai'
+          put_secret MKETY_PUBLIC_AI_MODEL 'gpt-6-luna-1'
+          put_secret MKETY_PUBLIC_AZURE_OPENAI_API_KEY "$MKETY_PUBLIC_AZURE_OPENAI_API_KEY"
+          put_secret MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT "$MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT"
+          put_secret MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT "$MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT"
+
+      - name: Smoke the live Public AI endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --connect-timeout 10 --max-time 90 -fsS \
+            -c /tmp/mkety-public-ai-cookies -b /tmp/mkety-public-ai-cookies \
+            'https://mkety.com/api/public/assistant' >/tmp/mkety-public-ai-history.json
+          node -e "const x=require('/tmp/mkety-public-ai-history.json');if(!Array.isArray(x.conversations)||!Array.isArray(x.messages))process.exit(1)"
+          code="$(curl --connect-timeout 10 --max-time 90 -sS \
+            -c /tmp/mkety-public-ai-cookies -b /tmp/mkety-public-ai-cookies \
+            -H 'Content-Type: application/json' -H 'Origin: https://mkety.com' \
+            --data '{"message":"Reply with the single word ready."}' \
+            -o /tmp/mkety-public-ai-response.json -w '%{http_code}' \
+            'https://mkety.com/api/public/assistant' || true)"
+          [ "$code" = '200' ] || { echo "Live Public AI smoke returned HTTP $code."; exit 1; }
+          node <<'NODE'
+          const x=require('/tmp/mkety-public-ai-response.json');
+          if(typeof x.answer!=='string'||!x.answer.trim()||!x.conversationId) throw new Error('Live Public AI returned no usable response.');
+          console.log('Live Public AI endpoint returned an answer and conversation ID.');
+          NODE
