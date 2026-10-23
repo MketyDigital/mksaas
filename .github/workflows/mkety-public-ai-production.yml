@@ -221,6 +221,34 @@ jobs:
           pnpm run deploy 2>&1 | tee /tmp/mkety-public-ai-deploy.log
           echo 'Uploaded only the mkety-platform Worker; no route or DNS API was invoked.'
 
+      - name: Attach Public AI runtime configuration and provider credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          put_secret() {
+            local name="$1"
+            local value="$2"
+            printf '%s' "$value" | pnpm exec wrangler secret put "$name" --name mkety-platform >/dev/null
+            echo "Configured Public AI runtime setting: $name"
+          }
+          put_secret MKETY_PUBLIC_AI_VISITOR_SECRET "$MKETY_PUBLIC_AI_VISITOR_SECRET"
+          put_secret MKETY_PUBLIC_AI_ENABLED 'true'
+          put_secret MKETY_PUBLIC_AI_PRIMARY_PROVIDER 'azure-openai'
+          put_secret MKETY_PUBLIC_AI_FALLBACK_PROVIDERS 'workers-ai'
+          put_secret MKETY_PUBLIC_AI_MODEL 'gpt-6-luna-1'
+          put_secret MKETY_PUBLIC_AZURE_OPEN_AI_API_KEY "$MKETY_PUBLIC_AZURE_OPENAI_API_KEY"
+          put_secret MKETY_PUBLIC_AZURE_OPENAI_API_KEY "$MKETY_PUBLIC_AZURE_OPENAI_API_KEY"
+          put_secret MKETY_PUBLIC_AZURE_OPEN_AI_KEY "$MKETY_PUBLIC_AZURE_OPENAI_API_KEY"
+          put_secret MKETY_PUBLIC_AZURE_OPENAI_KEY "$MKETY_PUBLIC_AZURE_OPENAI_API_KEY"
+          put_secret MKETY_PUBLIC_AZURE_API_KEY "$MKETY_PUBLIC_AZURE_OPENAI_API_KEY"
+          put_secret MKETY_PUBLIC_AZURE_KEY "$MKETY_PUBLIC_AZURE_OPENAI_API_KEY"
+          put_secret MKETY_PUBLIC_AZURE_OPEN_AI_ENDPOINT "$MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT"
+          put_secret MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT "$MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT"
+          put_secret MKETY_PUBLIC_AZURE_OPEN_AI_MODEL 'gpt-6-luna-1'
+          put_secret MKETY_PUBLIC_AZURE_OPENAI_MODEL 'gpt-6-luna-1'
+          put_secret MKETY_PUBLIC_AZURE_OPEN_AI_DEPLOYMENT "$MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT"
+          put_secret MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT "$MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT"
+
   configure-public-ai-routing:
     needs: [authorize, deploy-public-ai]
     uses: ./.github/workflows/mkety-coolify-production-db-executor.yml
@@ -236,51 +264,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-        - name: Attach Public AI runtime configuration and provider credentials
-          shell: bash
-          run: |
-            set -euo pipefail
-            put_secret() {
-              local name="$1"
-              local value="$2"
-              printf '%s' "$value" | pnpm exec wrangler secret put "$name" --name mkety-platform >/dev/null
-              echo "Configured Public AI runtime setting: $name"
-            }
-            put_secret MKETY_PUBLIC_AI_VISITOR_SECRET "$MKETY_PUBLIC_AI_VISITOR_SECRET"
-            put_secret MKETY_PUBLIC_AI_ENABLED 'true'
-            put_secret MKETY_PUBLIC_AI_PRIMARY_PROVIDER 'azure-openai'
-            put_secret MKETY_PUBLIC_AI_FALLBACK_PROVIDERS 'workers-ai'
-            put_secret MKETY_PUBLIC_AI_MODEL 'gpt-6-luna-1'
-            put_secret MKETY_PUBLIC_AZURE_OPEN_AI_API_KEY "$MKETY_PUBLIC_AZURE_OPENAI_API_KEY"
-            put_secret MKETY_PUBLIC_AZURE_OPENAI_API_KEY "$MKETY_PUBLIC_AZURE_OPENAI_API_KEY"
-            put_secret MKETY_PUBLIC_AZURE_OPEN_AI_KEY "$MKETY_PUBLIC_AZURE_OPENAI_API_KEY"
-            put_secret MKETY_PUBLIC_AZURE_OPENAI_KEY "$MKETY_PUBLIC_AZURE_OPENAI_API_KEY"
-            put_secret MKETY_PUBLIC_AZURE_API_KEY "$MKETY_PUBLIC_AZURE_OPENAI_API_KEY"
-            put_secret MKETY_PUBLIC_AZURE_KEY "$MKETY_PUBLIC_AZURE_OPENAI_API_KEY"
-            put_secret MKETY_PUBLIC_AZURE_OPEN_AI_ENDPOINT "$MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT"
-            put_secret MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT "$MKETY_PUBLIC_AZURE_OPENAI_ENDPOINT"
-            put_secret MKETY_PUBLIC_AZURE_OPEN_AI_MODEL 'gpt-6-luna-1'
-            put_secret MKETY_PUBLIC_AZURE_OPENAI_MODEL 'gpt-6-luna-1'
-            put_secret MKETY_PUBLIC_AZURE_OPEN_AI_DEPLOYMENT "$MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT"
-            put_secret MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT "$MKETY_PUBLIC_AZURE_OPENAI_DEPLOYMENT"
-  
-        - name: Smoke the live Public AI endpoint
-          shell: bash
-          run: |
-            set -euo pipefail
-            curl --connect-timeout 10 --max-time 90 -fsS \
-              -c /tmp/mkety-public-ai-cookies -b /tmp/mkety-public-ai-cookies \
-              'https://mkety.com/api/public/assistant' >/tmp/mkety-public-ai-history.json
-            node -e "const x=require('/tmp/mkety-public-ai-history.json');if(!Array.isArray(x.conversations)||!Array.isArray(x.messages))process.exit(1)"
-            code="$(curl --connect-timeout 10 --max-time 90 -sS \
-              -c /tmp/mkety-public-ai-cookies -b /tmp/mkety-public-ai-cookies \
-              -H 'Content-Type: application/json' -H 'Origin: https://mkety.com' \
-              --data '{"message":"Reply with the single word ready."}' \
-              -o /tmp/mkety-public-ai-response.json -w '%{http_code}' \
-              'https://mkety.com/api/public/assistant' || true)"
-            [ "$code" = '200' ] || { echo "Live Public AI smoke returned HTTP $code."; exit 1; }
-            node <<'NODE'
-            const x=require('/tmp/mkety-public-ai-response.json');
-            if(typeof x.answer!=='string'||!x.answer.trim()||!x.conversationId) throw new Error('Live Public AI returned no usable response.');
-            console.log('Live Public AI endpoint returned an answer and conversation ID.');
-            NODE
+      - name: Smoke the live Public AI endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --connect-timeout 10 --max-time 90 -fsS \
+            -c /tmp/mkety-public-ai-cookies -b /tmp/mkety-public-ai-cookies \
+            'https://mkety.com/api/public/assistant' >/tmp/mkety-public-ai-history.json
+          node -e "const x=require('/tmp/mkety-public-ai-history.json');if(!Array.isArray(x.conversations)||!Array.isArray(x.messages))process.exit(1)"
+          code="$(curl --connect-timeout 10 --max-time 90 -sS \
+            -c /tmp/mkety-public-ai-cookies -b /tmp/mkety-public-ai-cookies \
+            -H 'Content-Type: application/json' -H 'Origin: https://mkety.com' \
+            --data '{"message":"Reply with the single word ready."}' \
+            -o /tmp/mkety-public-ai-response.json -w '%{http_code}' \
+            'https://mkety.com/api/public/assistant' || true)"
+          [ "$code" = '200' ] || { echo "Live Public AI smoke returned HTTP $code."; exit 1; }
+          node <<'NODE'
+          const x=require('/tmp/mkety-public-ai-response.json');
+          if(typeof x.answer!=='string'||!x.answer.trim()||!x.conversationId) throw new Error('Live Public AI returned no usable response.');
+          console.log('Live Public AI endpoint returned an answer and conversation ID.');
+          NODE
