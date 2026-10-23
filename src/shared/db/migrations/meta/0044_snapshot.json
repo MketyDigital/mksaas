@@ -836,7 +836,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'Nueva conversaci\u00f3n'"
+          "default": "'Nueva conversación'"
         },
         "messages": {
           "name": "messages",
