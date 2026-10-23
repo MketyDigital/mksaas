@@ -17,6 +17,11 @@ on:
         required: false
         default: false
         type: boolean
+      public_ai_config_only:
+        description: Configure only the Public AI routing record after deployment
+        required: false
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       verified_sha:
@@ -30,6 +35,11 @@ on:
         type: string
       public_ai_only:
         description: Apply only schema migrations and the Public AI routing config
+        required: false
+        default: false
+        type: boolean
+      public_ai_config_only:
+        description: Configure only the Public AI routing record after deployment
         required: false
         default: false
         type: boolean
@@ -68,6 +78,7 @@ jobs:
       RELEASE_BRANCH: ${{ inputs.release_branch }}
       TARGET_SHA: ${{ inputs.verified_sha }}
       PUBLIC_AI_ONLY: ${{ inputs.public_ai_only }}
+      PUBLIC_AI_CONFIG_ONLY: ${{ inputs.public_ai_config_only }}
 
     steps:
       - name: Check out frozen release branch
@@ -119,7 +130,7 @@ jobs:
             git_branch:process.env.RELEASE_BRANCH,
             git_commit_sha:process.env.TARGET_SHA,
             build_pack:'dockerfile',
-            dockerfile_location:process.env.PUBLIC_AI_ONLY==='true'?'/ops/coolify-migration/public-ai.Dockerfile':'/ops/coolify-migration/Dockerfile',
+            dockerfile_location:process.env.PUBLIC_AI_ONLY==='true'?'/ops/coolify-migration/public-ai.Dockerfile':process.env.PUBLIC_AI_CONFIG_ONLY==='true'?'/ops/coolify-migration/public-ai-config.Dockerfile':'/ops/coolify-migration/Dockerfile',
             ports_exposes:'3000',
             name:`mkety-db-migrate-${process.env.TARGET_SHA.slice(0,12)}`,
             description:`Ephemeral exact-SHA production DB migration host for ${process.env.TARGET_SHA}`,
@@ -386,9 +397,11 @@ jobs:
           const fs=require('node:fs');
           let logs='';
           try { logs=String(JSON.parse(fs.readFileSync('/tmp/app-logs.json','utf8')).logs||''); } catch {}
-          const required=process.env.PUBLIC_AI_ONLY==='true'
-            ? ['MKETY_DB_STAGE_OK=public-ai-migrate','MKETY_DB_STAGE_OK=public-ai-routing-configure','MKETY_DB_RELEASE_SEQUENCE_OK=true']
-            : [
+          const required=process.env.PUBLIC_AI_CONFIG_ONLY==='true'
+            ? ['MKETY_DB_STAGE_OK=public-ai-routing-configure','MKETY_DB_RELEASE_SEQUENCE_OK=true']
+            : process.env.PUBLIC_AI_ONLY==='true'
+              ? ['MKETY_DB_STAGE_OK=public-ai-migrate','MKETY_DB_RELEASE_SEQUENCE_OK=true']
+              : [
                 'MKETY_DB_STAGE_OK=base-migrate',
                 'MKETY_DB_STAGE_OK=content-migrate',
                 'MKETY_DB_STAGE_OK=content-seed',
