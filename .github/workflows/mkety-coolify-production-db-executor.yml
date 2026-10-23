@@ -410,7 +410,7 @@ jobs:
                 'MKETY_DB_STAGE_OK=billing-smoke',
                 'MKETY_DB_RELEASE_SEQUENCE_OK=true'
               ];
-          if (process.env.PUBLIC_AI_ONLY!=='true' && process.env.CONTROL_TENANT_SLUG) required.splice(6, 0, 'MKETY_DB_STAGE_OK=first-party-mail-readiness');
+          if (process.env.PUBLIC_AI_ONLY!=='true' && process.env.PUBLIC_AI_CONFIG_ONLY!=='true' && process.env.CONTROL_TENANT_SLUG) required.splice(6, 0, 'MKETY_DB_STAGE_OK=first-party-mail-readiness');
           process.exit(required.every((marker)=>logs.includes(marker)) ? 0 : 1);
           NODE
             then
