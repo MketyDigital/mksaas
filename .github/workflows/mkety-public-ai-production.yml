@@ -10,6 +10,7 @@ on:
 permissions:
   actions: read
   contents: read
+  pull-requests: read
 
 jobs:
   authorize:
@@ -94,15 +95,21 @@ jobs:
             response="$(curl --proto '=https' --tlsv1.2 -fsS \
               -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
               "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$candidate_sha&status=success&per_page=20")"
-            RESPONSE="$response" WORKFLOW="$workflow" CANDIDATE_SHA="$candidate_sha" node <<'NODE'
+            candidate_prs="$(curl --proto '=https' --tlsv1.2 -fsS \
+              -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/$candidate_sha/pulls?per_page=20")"
+            RESPONSE="$response" CANDIDATE_PRS="$candidate_prs" WORKFLOW="$workflow" CANDIDATE_SHA="$candidate_sha" node <<'NODE'
           const x=JSON.parse(process.env.RESPONSE||'{}');
-          const good=(x.workflow_runs||[]).some(r=>
-            r.head_sha===process.env.CANDIDATE_SHA &&
-            r.conclusion==='success' &&
-            r.event==='pull_request' &&
-            (r.pull_requests||[]).some(p=>p.base?.ref==='codex/public-ai-release-base-20261023')
+          const successful=(x.workflow_runs||[]).some(r=>
+            r.head_sha===process.env.CANDIDATE_SHA && r.conclusion==='success' && r.event==='pull_request'
           );
-          if(!good) throw new Error('Missing successful exact-SHA '+process.env.WORKFLOW+' evidence for the production-based candidate.');
+          const prs=JSON.parse(process.env.CANDIDATE_PRS||'[]');
+          const reviewed=prs.some(p=>
+            p.head?.sha===process.env.CANDIDATE_SHA &&
+            p.base?.ref==='codex/public-ai-release-base-20261023' &&
+            p.merged_at
+          );
+          if(!successful||!reviewed) throw new Error('Missing successful exact-SHA '+process.env.WORKFLOW+' evidence or merged release-branch PR for the production-based candidate.');
           NODE
           done
 
