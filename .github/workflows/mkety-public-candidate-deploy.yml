@@ -14,6 +14,7 @@ on:
       - codex/public-ai-release-base-20261023
     paths:
       - '.github/workflows/mkety-public-candidate-deploy.yml'
+      - '.github/workflows/mkety-public-ai-production.yml'
       - 'migrations/**'
       - 'src/shared/db/migrations/**'
       - 'src/shared/db/schema/**'
