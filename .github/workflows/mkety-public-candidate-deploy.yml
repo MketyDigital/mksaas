@@ -196,6 +196,8 @@ jobs:
           timeout --signal=TERM 180s pnpm db:smoke:mkety-content
           timeout --signal=TERM 180s pnpm db:smoke:billing-catalog
           DATABASE_URL="$DATABASE_URL" pnpm exec tsx scripts/verify-managed-ai-selection.ts
+          pnpm exec tsx scripts/configure-public-ai-production.ts
+          echo 'Staging Public AI routing is enabled with Azure Foundry and Workers AI fallback.'
 
       - name: Require operational Enterprise payment gateway
         id: enterprise-payment
