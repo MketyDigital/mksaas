@@ -48,7 +48,7 @@ describe('Public Mkety AI gateway', () => {
     expect(fallbackModel).toBe('gemini-3.8-flash');
   });
 
-  it('does not fail over a non-retryable validation/provider error', async () => {
+  it('continues to the configured fallback after a provider returns a non-retryable error', async () => {
     let fallbackCalled = false;
     const primary: PublicAIProviderAdapter = {
       id: 'openai',
@@ -70,7 +70,7 @@ describe('Public Mkety AI gateway', () => {
         primary: { adapter: primary, model: 'gpt-5.6-terra' },
         fallbacks: [{ adapter: fallback, model: 'gemini-3.8-flash' }],
       }),
-    ).rejects.toThrow(/bad request/);
-    expect(fallbackCalled).toBe(false);
+    ).resolves.toMatchObject({ text: 'should not happen', fallbackCount: 1, providerId: 'gemini' });
+    expect(fallbackCalled).toBe(true);
   });
 });
