@@ -27,7 +27,7 @@ jobs:
       PRODUCTION_BASE_SHA: 6a8cc8f48082ee9ed908c8fb8e9b6b54b2d8593c
       PRODUCTION_WORKER: mkety-platform
       EXPECTED_ACTIVE_VERSION: 1d57108a-c58c-44b7-bb28-11fc0792a986
-      VERIFIED_RELEASE_SHA: 6aff8a5021ea8c6684cd94189abab39d939e1740
+      VERIFIED_RELEASE_SHA: 8d0ef3e94c5544119689af032cb4c97982c1a8bf
     steps:
       - name: Check out exact production release
         uses: actions/checkout@v4
