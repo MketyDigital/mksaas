@@ -74,3 +74,5 @@ describe('Public Mkety AI gateway', () => {
     expect(fallbackCalled).toBe(true);
   });
 });
+
+// Keep the provider probe and candidate smoke tied to this exact release candidate.
