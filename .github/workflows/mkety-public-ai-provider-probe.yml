@@ -5,6 +5,7 @@ on:
   pull_request:
     branches:
       - main
+      - codex/public-ai-release-base-20261023
     paths:
       - '.github/workflows/mkety-public-ai-provider-probe.yml'
       - '.github/workflows/mkety-public-candidate-deploy.yml'
