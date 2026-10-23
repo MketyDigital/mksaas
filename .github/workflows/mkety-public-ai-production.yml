@@ -303,7 +303,7 @@ jobs:
           const x=require('/tmp/mkety-public-ai-response.json');
           const headers=fs.readFileSync('/tmp/mkety-public-ai-headers.txt','utf8');
           if(typeof x.answer!=='string'||!x.answer.trim()||!x.conversationId) throw new Error('Live Public AI returned no usable response.');
-          if(/x-mkety-ai-result:\\s*fallback/i.test(headers)||/temporarily unavailable/i.test(x.answer)) {
+          if(/x-mkety-ai-result:\s*fallback/i.test(headers)||/temporarily unavailable/i.test(x.answer)) {
             throw new Error('Live Public AI returned its deterministic unavailable fallback.');
           }
           console.log('Live Public AI returned an actual provider answer and conversation ID.');
