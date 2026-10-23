@@ -309,6 +309,41 @@
       "when": 1791548720087,
       "tag": "0043_mail_migrations",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1792790000000,
+      "tag": "0044_public_ai_provider_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1792791000000,
+      "tag": "0045_deployment_hostnames",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1792792000000,
+      "tag": "0046_deployment_request_artifact_key",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1792793000000,
+      "tag": "0047_enterprise_nowpayments_checkout_token",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1792794000000,
+      "tag": "0048_nowpayments_network_evidence",
+      "breakpoints": true
     }
   ]
 }
