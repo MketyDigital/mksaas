@@ -48,3 +48,5 @@ describe('public AI provider connection consolidation migration', () => {
     }
   });
 });
+
+// Re-run the candidate migration baseline when this Public AI release is revalidated.
