@@ -41,9 +41,10 @@ jobs:
           set -euo pipefail
           [ "$GITHUB_REF" = 'refs/heads/main' ] || { echo 'Unexpected production workflow ref.'; exit 1; }
           [[ "$VERIFIED_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'Verified release SHA is malformed.'; exit 1; }
+          encoded_release_branch="$(node -e "process.stdout.write(encodeURIComponent('codex/public-ai-release-base-20261023'))")"
           release_ref="$(curl --proto '=https' --tlsv1.2 -fsS \
             -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/branches/codex/public-ai-release-base-20261023")"
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/branches/$encoded_release_branch")"
           RELEASE_REF="$release_ref" VERIFIED_RELEASE_SHA="$VERIFIED_RELEASE_SHA" node <<'NODE'
           const payload=JSON.parse(process.env.RELEASE_REF||'{}');
           if(payload.commit?.sha!==process.env.VERIFIED_RELEASE_SHA) {
