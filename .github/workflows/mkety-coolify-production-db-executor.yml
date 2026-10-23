@@ -12,6 +12,16 @@ on:
         required: false
         default: feat/mkety-public-site-production
         type: string
+      public_ai_only:
+        description: Apply only schema migrations and the Public AI routing config
+        required: false
+        default: false
+        type: boolean
+      public_ai_config_only:
+        description: Configure only the Public AI routing record after deployment
+        required: false
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       verified_sha:
@@ -23,6 +33,16 @@ on:
         required: false
         default: feat/mkety-public-site-production
         type: string
+      public_ai_only:
+        description: Apply only schema migrations and the Public AI routing config
+        required: false
+        default: false
+        type: boolean
+      public_ai_config_only:
+        description: Configure only the Public AI routing record after deployment
+        required: false
+        default: false
+        type: boolean
     outputs:
       first_party_mail_tenant_id:
         description: Tenant UUID resolved from the configured Platform Control slug
@@ -57,6 +77,8 @@ jobs:
       # RELEASE_BRANCH: feat/mkety-public-site-production
       RELEASE_BRANCH: ${{ inputs.release_branch }}
       TARGET_SHA: ${{ inputs.verified_sha }}
+      PUBLIC_AI_ONLY: ${{ inputs.public_ai_only }}
+      PUBLIC_AI_CONFIG_ONLY: ${{ inputs.public_ai_config_only }}
 
     steps:
       - name: Check out frozen release branch
@@ -108,7 +130,7 @@ jobs:
             git_branch:process.env.RELEASE_BRANCH,
             git_commit_sha:process.env.TARGET_SHA,
             build_pack:'dockerfile',
-            dockerfile_location:'/ops/coolify-migration/Dockerfile',
+            dockerfile_location:process.env.PUBLIC_AI_ONLY==='true'?'/ops/coolify-migration/public-ai.Dockerfile':process.env.PUBLIC_AI_CONFIG_ONLY==='true'?'/ops/coolify-migration/public-ai-config.Dockerfile':'/ops/coolify-migration/Dockerfile',
             ports_exposes:'3000',
             name:`mkety-db-migrate-${process.env.TARGET_SHA.slice(0,12)}`,
             description:`Ephemeral exact-SHA production DB migration host for ${process.env.TARGET_SHA}`,
@@ -375,16 +397,20 @@ jobs:
           const fs=require('node:fs');
           let logs='';
           try { logs=String(JSON.parse(fs.readFileSync('/tmp/app-logs.json','utf8')).logs||''); } catch {}
-          const required=[
-            'MKETY_DB_STAGE_OK=base-migrate',
-            'MKETY_DB_STAGE_OK=content-migrate',
-            'MKETY_DB_STAGE_OK=content-seed',
-            'MKETY_DB_STAGE_OK=billing-seed',
-            'MKETY_DB_STAGE_OK=content-smoke',
-            'MKETY_DB_STAGE_OK=billing-smoke',
-            'MKETY_DB_RELEASE_SEQUENCE_OK=true'
-          ];
-          if (process.env.CONTROL_TENANT_SLUG) required.splice(6, 0, 'MKETY_DB_STAGE_OK=first-party-mail-readiness');
+          const required=process.env.PUBLIC_AI_CONFIG_ONLY==='true'
+            ? ['MKETY_DB_STAGE_OK=public-ai-routing-configure','MKETY_DB_RELEASE_SEQUENCE_OK=true']
+            : process.env.PUBLIC_AI_ONLY==='true'
+              ? ['MKETY_DB_STAGE_OK=public-ai-migrate','MKETY_DB_RELEASE_SEQUENCE_OK=true']
+              : [
+                'MKETY_DB_STAGE_OK=base-migrate',
+                'MKETY_DB_STAGE_OK=content-migrate',
+                'MKETY_DB_STAGE_OK=content-seed',
+                'MKETY_DB_STAGE_OK=billing-seed',
+                'MKETY_DB_STAGE_OK=content-smoke',
+                'MKETY_DB_STAGE_OK=billing-smoke',
+                'MKETY_DB_RELEASE_SEQUENCE_OK=true'
+              ];
+          if (process.env.PUBLIC_AI_ONLY!=='true' && process.env.PUBLIC_AI_CONFIG_ONLY!=='true' && process.env.CONTROL_TENANT_SLUG) required.splice(6, 0, 'MKETY_DB_STAGE_OK=first-party-mail-readiness');
           process.exit(required.every((marker)=>logs.includes(marker)) ? 0 : 1);
           NODE
             then
