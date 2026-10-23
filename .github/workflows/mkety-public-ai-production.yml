@@ -26,8 +26,8 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       PRODUCTION_BASE_SHA: 6a8cc8f48082ee9ed908c8fb8e9b6b54b2d8593c
       PRODUCTION_WORKER: mkety-platform
-      EXPECTED_ACTIVE_VERSION: 1e41bd8a-fad5-4941-a9c3-d387b5706601
-      VERIFIED_RELEASE_SHA: d380415b4d5609591273d4786ee91870e226598f
+      EXPECTED_ACTIVE_VERSION: 1d57108a-c58c-44b7-bb28-11fc0792a986
+      VERIFIED_RELEASE_SHA: 6aff8a5021ea8c6684cd94189abab39d939e1740
     steps:
       - name: Check out exact production release
         uses: actions/checkout@v4
