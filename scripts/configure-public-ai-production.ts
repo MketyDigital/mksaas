@@ -16,12 +16,9 @@ const routing = {
 const sql = postgres(databaseUrl, { max: 1, prepare: false });
 try {
   const configured = await sql.begin(async (tx) => {
-    const rows = await tx`
-      SELECT id, metadata_json
-      FROM saas_template.platform_app_control_center_modules
-      WHERE module_key = 'ai-operations'
-      FOR UPDATE
-    `;
+    const rows = await tx.unsafe(
+      "SELECT id, metadata_json FROM saas_template.platform_app_control_center_modules WHERE module_key = 'ai-operations' FOR UPDATE",
+    );
 
     if (rows.length === 0) return false;
     if (rows.length !== 1) throw new Error('AI Operations control module is not unique.');
@@ -37,17 +34,14 @@ try {
     const before = JSON.stringify({ publicAiConfig: current.publicAiConfig ?? null });
     const after = JSON.stringify({ publicAiConfig: routing });
 
-    await tx`
-      UPDATE saas_template.platform_app_control_center_modules
-      SET metadata_json = ${JSON.stringify(next)}::jsonb, updated_at = now()
-      WHERE id = ${rows[0].id}
-    `;
-    await tx`
-      INSERT INTO saas_template.platform_app_experience_revisions
-        (entity_type, entity_id, before_json, after_json, actor_id)
-      VALUES
-        ('control_center_module', ${rows[0].id}, ${before}::jsonb, ${after}::jsonb, NULL)
-    `;
+    await tx.unsafe(
+      'UPDATE saas_template.platform_app_control_center_modules SET metadata_json = $1::jsonb, updated_at = now() WHERE id = $2',
+      [JSON.stringify(next), rows[0].id],
+    );
+    await tx.unsafe(
+      'INSERT INTO saas_template.platform_app_experience_revisions (entity_type, entity_id, before_json, after_json, actor_id) VALUES ($1, $2, $3::jsonb, $4::jsonb, NULL)',
+      ['control_center_module', rows[0].id, before, after],
+    );
     return true;
   });
 
