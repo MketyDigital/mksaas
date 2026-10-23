@@ -118,6 +118,12 @@ jobs:
             return body.result;
           }
 
+          const commitSha = value => {
+            if (typeof value !== 'string') return null;
+            const matches = [...new Set(value.match(/\b[0-9a-f]{40}\b/gi) || [])];
+            return matches.length === 1 ? matches[0].toLowerCase() : null;
+          };
+
           (async () => {
             const result = await read('/deployments?per_page=5');
             const deployments = Array.isArray(result?.deployments) ? result.deployments.slice(0, 5) : [];
@@ -140,6 +146,7 @@ jobs:
                 source: metadata.source || null,
                 script_etag: script.etag || null,
                 last_deployed_from: script.last_deployed_from || null,
+                source_commit: commitSha([metadata.tag, metadata.message].filter(Boolean).join(' ')),
               });
             }));
             const summary = deployments.map(d => ({
@@ -153,6 +160,7 @@ jobs:
                 metadata: versions.get(v.version_id) || null,
               })),
               triggered_by: d.annotations?.['workers/triggered_by'] || null,
+              source_commit: commitSha(d.annotations?.['workers/message']),
             }));
             const output = JSON.stringify({
               worker,
