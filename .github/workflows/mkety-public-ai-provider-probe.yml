@@ -73,3 +73,105 @@ jobs:
           if(!text) throw new Error('Azure Foundry returned HTTP 200 without usable response text.');
           console.log('Azure Foundry Public AI is responding successfully.');
           NODE
+
+  worker-baseline:
+    name: Read active Cloudflare Worker deployment/version metadata
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WORKER_NAME: mkety-platform
+    steps:
+      - name: Read Worker deployment and version metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || { echo 'Cloudflare API token is not configured.'; exit 1; }
+          [[ "${CLOUDFLARE_ACCOUNT_ID:-}" =~ ^[0-9a-fA-F]{32}$ ]] || { echo 'Cloudflare account ID is missing or malformed.'; exit 1; }
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const account = process.env.CLOUDFLARE_ACCOUNT_ID;
+          const worker = process.env.WORKER_NAME;
+          const token = process.env.CLOUDFLARE_API_TOKEN;
+          const base = 'https://api.cloudflare.com/client/v4/accounts/' +
+            encodeURIComponent(account) + '/workers/scripts/' +
+            encodeURIComponent(worker);
+
+          async function read(path) {
+            let response;
+            try {
+              response = await fetch(base + path, {
+                headers: { authorization: 'Bearer ' + token, accept: 'application/json' },
+                signal: AbortSignal.timeout(20000),
+              });
+            } catch {
+              throw new Error('Cloudflare read request failed before receiving a response.');
+            }
+            if (!response.ok) throw new Error('Cloudflare read request returned HTTP ' + response.status + '.');
+            let body;
+            try { body = await response.json(); }
+            catch { throw new Error('Cloudflare returned invalid JSON for a read request.'); }
+            if (body.success !== true) throw new Error('Cloudflare rejected a read request; response details were intentionally suppressed.');
+            return body.result;
+          }
+
+          const commitSha = value => {
+            if (typeof value !== 'string') return null;
+            const matches = [...new Set(value.match(/\b[0-9a-f]{40}\b/gi) || [])];
+            return matches.length === 1 ? matches[0].toLowerCase() : null;
+          };
+
+          (async () => {
+            const result = await read('/deployments?per_page=5');
+            const deployments = Array.isArray(result?.deployments) ? result.deployments.slice(0, 5) : [];
+            if (deployments.length === 0) throw new Error('No Worker deployments were returned.');
+            const ids = [...new Set(deployments.flatMap(d =>
+              Array.isArray(d.versions) ? d.versions.map(v => v.version_id) : []
+            ))];
+            for (const id of ids) {
+              if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error('Cloudflare returned an invalid version identifier.');
+            }
+            const versions = new Map();
+            await Promise.all(ids.map(async id => {
+              const v = await read('/versions/' + encodeURIComponent(id));
+              const metadata = v?.metadata || {};
+              const script = v?.resources?.script || {};
+              versions.set(id, {
+                id: v?.id || id,
+                number: v?.number ?? null,
+                created_on: metadata.created_on || null,
+                source: metadata.source || null,
+                script_etag: script.etag || null,
+                last_deployed_from: script.last_deployed_from || null,
+                source_commit: commitSha([metadata.tag, metadata.message].filter(Boolean).join(' ')),
+              });
+            }));
+            const summary = deployments.map(d => ({
+              id: d.id,
+              created_on: d.created_on,
+              source: d.source,
+              strategy: d.strategy,
+              versions: (d.versions || []).map(v => ({
+                version_id: v.version_id,
+                percentage: v.percentage,
+                metadata: versions.get(v.version_id) || null,
+              })),
+              triggered_by: d.annotations?.['workers/triggered_by'] || null,
+              source_commit: commitSha(d.annotations?.['workers/message']),
+            }));
+            const output = JSON.stringify({
+              worker,
+              inspected_at: new Date().toISOString(),
+              active_deployment: summary[0],
+              recent_deployments: summary,
+            }, null, 2);
+            console.log(output);
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, '## Active production Worker baseline\\n\\n' + output + '\\n');
+          })().catch(error => {
+            console.error(error instanceof Error ? error.message : 'Worker metadata inspection failed.');
+            process.exitCode = 1;
+          });
+          NODE
