@@ -40,6 +40,9 @@ jest.mock('@/shared/db/schema', () => ({
     expiresAt: 'overrides.expiresAt',
   },
   mailWorkspaces: { id: 'workspaces.id', tenantId: 'workspaces.tenantId', status: 'workspaces.status' },
+  mailMailboxes: { id: 'mailboxes.id', tenantId: 'mailboxes.tenantId', workspaceId: 'mailboxes.workspaceId', domainId: 'mailboxes.domainId', localPart: 'mailboxes.localPart', status: 'mailboxes.status' },
+  mailDomains: { id: 'domains.id', domain: 'domains.domain', status: 'domains.status', sendingEnabled: 'domains.sendingEnabled', spfStatus: 'domains.spfStatus', dkimStatus: 'domains.dkimStatus', dmarcStatus: 'domains.dmarcStatus' },
+  mailAppPasswords: { id: 'mailAppPasswords.id' },
   auditEvents: { id: 'audit.id', action: 'audit.action', entityType: 'audit.entityType', entityId: 'audit.entityId' },
 }));
 jest.mock('@/shared/lib/permissions', () => ({ requirePermission: jest.fn() }));
@@ -50,17 +53,76 @@ jest.mock('../commercial/plans', () => ({ isMailPlanKey: jest.fn() }));
 jest.mock('../commercial/enterprise-offers', () => ({ parseMailEnterpriseOfferInput: jest.fn() }));
 
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
+import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { db } from '@/shared/db';
+import { withServerActionDatabase } from '@/shared/db/server-action';
 import { auditEvents, mailWorkspaces, tenantEntitlementOverrides, tenants } from '@/shared/db/schema';
 import { requirePermission } from '@/shared/lib/permissions';
 import { logAuditEvent } from '@/shared/services/audit-service';
+import { createFirstPartySmtpCredentialRecord } from '@/features/mail/server/first-party-smtp-credential';
+import { getFirstPartyMailTenantId } from './runtime-config';
 
-import { bootstrapFirstPartyMailWorkspace } from './admin-actions';
+import { bootstrapFirstPartyMailWorkspace, createFirstPartySmtpCredential } from './admin-actions';
 
 const mockRequireAccess = requirePlatformControlAccess as jest.MockedFunction<typeof requirePlatformControlAccess>;
 const mockRequirePermission = requirePermission as jest.MockedFunction<typeof requirePermission>;
 const mockAudit = logAuditEvent as jest.MockedFunction<typeof logAuditEvent>;
 const mockTransaction = db.transaction as jest.Mock;
+const mockWithServerActionDatabase = withServerActionDatabase as jest.MockedFunction<typeof withServerActionDatabase>;
+const mockHasEntitlement = hasEntitlement as jest.MockedFunction<typeof hasEntitlement>;
+const mockCreateCredential = createFirstPartySmtpCredentialRecord as jest.MockedFunction<typeof createFirstPartySmtpCredentialRecord>;
+const mockGetFirstPartyTenantId = getFirstPartyMailTenantId as jest.MockedFunction<typeof getFirstPartyMailTenantId>;
+
+describe('first-party SMTP credential server action', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockWithServerActionDatabase.mockImplementation(async (work) => work());
+    mockRequireAccess.mockResolvedValue({ userId: 'operator-1', email: 'operator@mkety.com' } as never);
+    mockRequirePermission.mockResolvedValue(undefined as never);
+    mockHasEntitlement.mockResolvedValue(true as never);
+    mockGetFirstPartyTenantId.mockReturnValue('reserved-tenant');
+    mockCreateCredential.mockResolvedValue({ id: 'smtp-credential-1', secret: 'mkmail-test-only' });
+    mockAudit.mockResolvedValue(undefined as never);
+
+    const selectQuery = {
+      from: jest.fn(),
+      innerJoin: jest.fn(),
+      where: jest.fn(),
+      limit: jest.fn().mockResolvedValue([{
+        mailbox: { id: 'mailbox-1', tenantId: 'reserved-tenant', status: 'active' },
+        domain: {
+          status: 'sending_ready',
+          sendingEnabled: true,
+          spfStatus: 'verified',
+          dkimStatus: 'verified',
+          dmarcStatus: 'verified',
+        },
+      }]),
+    };
+    selectQuery.from.mockReturnValue(selectQuery);
+    selectQuery.innerJoin.mockReturnValue(selectQuery);
+    selectQuery.where.mockReturnValue(selectQuery);
+
+    const queryDb = db as unknown as {
+      query: {
+        tenants: { findFirst: jest.Mock };
+        mailWorkspaces: { findFirst: jest.Mock };
+      };
+      select: jest.Mock;
+    };
+    queryDb.query = {
+      tenants: { findFirst: jest.fn().mockResolvedValue({ id: 'reserved-tenant', slug: 'mkety-ops' }) },
+      mailWorkspaces: { findFirst: jest.fn().mockResolvedValue({ id: 'workspace-1', status: 'active' }) },
+    };
+    queryDb.select = jest.fn(() => selectQuery);
+  });
+
+  it('runs credential creation inside a fresh server-action database context', async () => {
+    await expect(createFirstPartySmtpCredential('mkety', {}, new FormData())).resolves.toEqual({ secret: 'mkmail-test-only' });
+
+    expect(mockWithServerActionDatabase).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('first-party Mail workspace bootstrap', () => {
   let grantExists: boolean;
