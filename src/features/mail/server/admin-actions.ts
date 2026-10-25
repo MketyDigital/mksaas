@@ -204,7 +204,7 @@ async function hashAppPassword(secret: string) {
   return `{SSHA256}${btoa(binary)}`;
 }
 
-export async function createFirstPartySmtpCredential(
+async function createFirstPartySmtpCredentialImpl(
   opsTenantSlug: string,
   _state: { secret?: string; error?: string },
   _formData: FormData,
@@ -275,6 +275,14 @@ export async function createFirstPartySmtpCredential(
     await db.update(mailAppPasswords).set({ revokedAt: new Date() }).where(eq(mailAppPasswords.id, credential.id));
     return { error: 'Could not create the first-party SMTP credential. Check workspace readiness and try again.' };
   }
+}
+
+export async function createFirstPartySmtpCredential(
+  opsTenantSlug: string,
+  state: { secret?: string; error?: string },
+  formData: FormData,
+): Promise<{ secret?: string; error?: string }> {
+  return withServerActionDatabase(() => createFirstPartySmtpCredentialImpl(opsTenantSlug, state, formData));
 }
 
 export async function configureFirstPartyMailIngressAliases(
