@@ -30,6 +30,15 @@ export function assessConnectorVersion(version, architecture) {
   return 'patched';
 }
 
+export function requiresFollowUp(assessment) {
+  return [
+    'upgrade_required',
+    'unknown',
+    'macos_install_method_review',
+    'no_active_connectors',
+  ].includes(assessment);
+}
+
 function safeText(value, fallback) {
   const text = typeof value === 'string' ? value : fallback;
   return text.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 128) || fallback;
@@ -70,11 +79,17 @@ export async function fetchTunnelAudit({ accountId, apiToken, fetcher = globalTh
       const separator = path.includes('?') ? '&' : '?';
       const payload = await request(`${path}${separator}per_page=${PAGE_SIZE}&page=${page}`);
       rows.push(...payload.result);
-      const rawTotalPages = payload.result_info?.total_pages;
-      const totalPages = typeof rawTotalPages === 'number' ? rawTotalPages : Number(rawTotalPages);
-      if (Number.isInteger(totalPages) && totalPages >= 1) {
-        if (page >= totalPages) return rows;
-      } else if (payload.result.length < PAGE_SIZE) {
+      const rawTotalCount = payload.result_info?.total_count;
+      const totalCount = typeof rawTotalCount === 'number'
+        ? rawTotalCount
+        : typeof rawTotalCount === 'string' && rawTotalCount.trim().length > 0
+          ? Number(rawTotalCount)
+          : Number.NaN;
+      if (Number.isInteger(totalCount) && totalCount >= 0) {
+        if (rows.length > totalCount) throw new Error('Cloudflare API returned inconsistent pagination metadata');
+        if (rows.length === totalCount) return rows;
+        if (payload.result.length === 0) throw new Error('Cloudflare API pagination ended before all records were returned');
+      } else if (payload.result.length === 0) {
         return rows;
       }
     }
@@ -142,13 +157,11 @@ async function main() {
   });
   console.log(`CLOUDFLARED_CONNECTOR_AUDIT ${JSON.stringify(audit)}`);
 
-  const needsReview = audit.some(({ assessment }) => [
-    'upgrade_required',
-    'unknown',
-    'macos_install_method_review',
-  ].includes(assessment));
+  const needsReview = audit.length === 0 || audit.some(({ assessment }) => requiresFollowUp(assessment));
   if (needsReview) {
-    console.error('At least one connected client needs an upgrade or manual version review.');
+    console.error(audit.length === 0
+      ? 'No tunnels were returned; verify the Cloudflare account and API token scope.'
+      : 'At least one tunnel needs an upgrade, version review, or offline-host check.');
     process.exitCode = 1;
   }
 }
