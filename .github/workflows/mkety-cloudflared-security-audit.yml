@@ -1,0 +1,26 @@
+name: Mkety Cloudflared Security Audit
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Audit connected Tunnel client versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - name: Check out audit code
+        uses: actions/checkout@v4
+
+      - name: Test audit behavior
+        run: node --test scripts/cloudflared-security-audit.test.mjs
+
+      - name: Read connected Tunnel client versions
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/cloudflared-security-audit.mjs
