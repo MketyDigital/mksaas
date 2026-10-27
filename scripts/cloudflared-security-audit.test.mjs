@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assessConnectorVersion, fetchTunnelAudit } from './cloudflared-security-audit.mjs';
+import { assessConnectorVersion, fetchTunnelAudit, requiresFollowUp } from './cloudflared-security-audit.mjs';
 
 test('assesses the fixed version floor and the macOS install-method exception', () => {
   assert.equal(assessConnectorVersion('2026.10.2', 'linux_amd64'), 'patched');
@@ -9,6 +9,8 @@ test('assesses the fixed version floor and the macOS install-method exception', 
   assert.equal(assessConnectorVersion('2026.10.3', 'darwin_arm64'), 'patched');
   assert.equal(assessConnectorVersion('unknown', 'linux_amd64'), 'unknown');
   assert.equal(assessConnectorVersion('2026.10.3-rc.1', 'linux_amd64'), 'unknown');
+  assert.equal(requiresFollowUp('patched'), false);
+  assert.equal(requiresFollowUp('no_active_connectors'), true);
 });
 
 test('paginates tunnels and connections and emits only sanitized version data', async () => {
@@ -21,15 +23,11 @@ test('paginates tunnels and connections and emits only sanitized version data', 
     const path = parsed.pathname;
     const page = Number(parsed.searchParams.get('page') || 1);
     let result;
-    let totalPages = 1;
-
     if (path.endsWith('/cfd_tunnel')) {
-      totalPages = 2;
       result = page === 1
         ? [{ id: '11111111-1111-4111-8111-111111111111', name: 'prod-linux', status: 'healthy' }]
         : [{ id: '22222222-2222-4222-8222-222222222222', name: 'mac-connector', status: 'healthy' }];
     } else if (path.endsWith('/11111111-1111-4111-8111-111111111111/connections')) {
-      totalPages = 2;
       result = page === 1
         ? [{ arch: 'linux_amd64', version: '2026.10.2', conns: [{ client_version: '2026.10.2', origin_ip: '192.0.2.1' }] }]
         : [{ arch: 'linux_amd64', version: '2026.10.2', conns: [{ client_version: '2026.10.2', origin_ip: '192.0.2.2' }] }];
@@ -39,7 +37,8 @@ test('paginates tunnels and connections and emits only sanitized version data', 
       throw new Error(`Unexpected endpoint ${path}`);
     }
 
-    return new Response(JSON.stringify({ success: true, result, result_info: { total_pages: totalPages } }), {
+    const totalCount = path.endsWith('/cfd_tunnel') ? 2 : path.includes('11111111') ? 2 : 1;
+    return new Response(JSON.stringify({ success: true, result, result_info: { page, per_page: 100, total_count: totalCount } }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     });
@@ -67,7 +66,7 @@ test('reports tunnels with no active connections without claiming a host is patc
     const result = parsed.pathname.endsWith('/cfd_tunnel')
       ? [{ id: '33333333-3333-4333-8333-333333333333', name: 'offline', status: 'inactive' }]
       : [];
-    return new Response(JSON.stringify({ success: true, result, result_info: { total_pages: 1 } }), { status: 200 });
+    return new Response(JSON.stringify({ success: true, result, result_info: { page: 1, per_page: 100, total_count: parsed.pathname.endsWith('/cfd_tunnel') ? 1 : 0 } }), { status: 200 });
   };
 
   const result = await fetchTunnelAudit({ accountId: 'a'.repeat(32), apiToken: 'token', fetcher });
@@ -91,11 +90,11 @@ test('continues pagination when a full page has a null total-pages value', async
             status: 'inactive',
           }))
         : [];
-      return new Response(JSON.stringify({ success: true, result, result_info: { total_pages: null } }), { status: 200 });
+      return new Response(JSON.stringify({ success: true, result, result_info: { page, per_page: 100, total_count: null } }), { status: 200 });
     }
 
     connectionCalls += 1;
-    return new Response(JSON.stringify({ success: true, result: [], result_info: { total_pages: null } }), { status: 200 });
+    return new Response(JSON.stringify({ success: true, result: [], result_info: { page: 1, per_page: 100, total_count: 0 } }), { status: 200 });
   };
 
   const result = await fetchTunnelAudit({ accountId: 'a'.repeat(32), apiToken: 'token', fetcher });
