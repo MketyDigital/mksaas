@@ -22,7 +22,7 @@
 - Missing or unparsable versions: mark unknown and fail the audit.
 - macOS `2026.10.2`: require install-method confirmation because the notice's Homebrew exception cannot be inferred from API data.
 - API failures: include only HTTP status and a fixed safe message, never raw response bodies.
-- No active connections: report as no active clients without claiming that an offline host is patched.
+- No active connections: report as no active clients and fail the audit for a manual offline-host check.
 - Output: exclude all resource IDs and origin IP addresses.
 
 ---
@@ -38,7 +38,8 @@
 
 **Interfaces:**
 - `fetchTunnelAudit({ accountId, apiToken, fetcher })` returns sanitized tunnel and connected-client assessments.
-- `assessConnectorVersion(version, arch)` returns `patched`, `upgrade_required`, `macos_install_method_review`, or `unknown`.
+- `assessConnectorVersion(version, arch)` classifies the fixed-version floor and macOS review exception.
+- `requiresFollowUp(assessment)` keeps unknown, old, macOS-review, and offline tunnels from producing a green audit.
 
 - [ ] Write tests first for release-floor assessment, macOS review, complete pagination, safe API errors, and output omission of IDs/IPs/secrets.
 - [ ] Run `node --test scripts/cloudflared-security-audit.test.mjs`; confirm the expected missing-module failure before adding the helper.
