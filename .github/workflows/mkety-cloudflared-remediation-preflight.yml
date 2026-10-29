@@ -90,6 +90,11 @@ jobs:
               ),
               shownOnce: item.is_shown_once === true,
               sharedReference: typeof item.value === 'string' && /^\{\{[^}]+\}\}$/.test(item.value),
+              preview: item.is_preview === true,
+              runtime: item.is_runtime !== false,
+              buildtime: item.is_buildtime === true,
+              literal: item.is_literal === true,
+              shared: item.is_shared === true,
             }));
 
           const startCommand = typeof app.start_command === 'string' ? app.start_command : '';
@@ -101,16 +106,22 @@ jobs:
             buildPack: app.build_pack || null,
             dockerImage: app.docker_registry_image_name || null,
             dockerImageTag: app.docker_registry_image_tag || null,
+            gitRepository: app.git_repository || null,
+            gitBranch: app.git_branch || null,
+            dockerfileLocation: app.dockerfile_location || null,
+            inlineDockerfileConfigured: typeof app.dockerfile === 'string' && app.dockerfile.length > 0,
+            topLevelFieldNames: Object.keys(app).sort(),
+            settingsFieldNames: app.settings && typeof app.settings === 'object' ? Object.keys(app.settings).sort() : [],
             commandConfigured: startCommand.length > 0,
             commandReferencesCloudflared: /cloudflared/i.test(startCommand),
             commandLooksLikeTunnelRun: /tunnel.*run/i.test(startCommand),
             commandUsesTokenFlag: /(?:--token|TUNNEL_TOKEN|CF_TUNNEL_TOKEN)/i.test(startCommand),
             commandTokenVariableNames: [...new Set(tokenReferences)],
-            networkConnected: app.connect_to_docker_network === true,
-            projectConfigured: Boolean(app.project_uuid),
-            environmentConfigured: Boolean(app.environment_uuid),
-            serverConfigured: Boolean(app.server_uuid),
-            destinationConfigured: Boolean(app.destination_uuid),
+            networkConnected: app.settings?.connect_to_docker_network === true || app.connect_to_docker_network === true,
+            projectConfigured: Boolean(app.repository_project_id || app.project_uuid),
+            environmentConfigured: Boolean(app.environment_id || app.environment_uuid),
+            serverConfigured: Boolean(app.destination_id || app.server_uuid),
+            destinationConfigured: Boolean(app.destination_type || app.destination_uuid),
             tunnelTokenVariables: tokenVariables,
           };
 
@@ -174,16 +185,17 @@ jobs:
           } catch {
             // This optional read must not hide the core app/connector facts.
           }
-          const safeOriginServices = originServices
-            .filter((service) => service?.host?.hostname === 'db-runtime.mkety.com')
-            .map((service) => ({
-              name: typeof service.name === 'string' ? service.name : null,
-              type: typeof service.type === 'string' ? service.type : null,
-              tcpPort: service.tcp_port ?? null,
-              appProtocol: typeof service.app_protocol === 'string' ? service.app_protocol : null,
-              certVerificationMode: service.tls_settings?.cert_verification_mode || null,
-              hasTunnel: Boolean(service.host?.network?.tunnel_id || service.host?.resolver_network?.tunnel_id),
-            }));
+          const safeOriginServices = originServices.map((service) => ({
+            name: typeof service.name === 'string' ? service.name : null,
+            type: typeof service.type === 'string' ? service.type : null,
+            tcpPort: service.tcp_port ?? null,
+            appProtocol: typeof service.app_protocol === 'string' ? service.app_protocol : null,
+            hostKind: service.host?.hostname ? 'hostname' : service.host?.ipv4 ? 'ipv4' : service.host?.ipv6 ? 'ipv6' : 'unknown',
+            certVerificationMode: service.tls_settings?.cert_verification_mode || null,
+            noTlsVerifyEnabled: service.tls_settings?.no_tls_verify === true,
+            hasTlsSettings: Boolean(service.tls_settings && typeof service.tls_settings === 'object'),
+            hasTunnel: Boolean(service.host?.network?.tunnel_id || service.host?.resolver_network?.tunnel_id),
+          }));
 
           console.log('CLOUDFLARED_REMEDIATION_PREFLIGHT ' + JSON.stringify({
             application: safeApp,
