@@ -91,7 +91,7 @@ jobs:
                 }
                 detail = messages
                   .join('; ')
-                  .replace(/Bearer\\s+[^\\s"'`]+/gi, 'Bearer [redacted]')
+                  .replace(/Bearer\s+[^\s"'`]+/gi, 'Bearer [redacted]')
                   .replace(/[A-Za-z0-9_-]{40,}/g, '[redacted]')
                   .slice(0, 1000);
               } catch {
