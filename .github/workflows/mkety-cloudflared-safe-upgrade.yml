@@ -217,12 +217,13 @@ jobs:
             'CMD ["tunnel","--no-autoupdate","--loglevel","info","--metrics","0.0.0.0:2000","run"]',
             '',
           ].join('\n');
+          const stagedDockerfileBase64 = Buffer.from(stagedDockerfile, 'utf8').toString('base64');
           const createBody = {
             project_uuid: process.env.PROJECT_UUID,
             server_uuid: process.env.SERVER_UUID,
             environment_uuid: process.env.ENVIRONMENT_UUID,
             build_pack: 'dockerfile',
-            dockerfile: stagedDockerfile,
+            dockerfile: stagedDockerfileBase64,
             ports_exposes: '2000',
             name: process.env.STAGED_APP_NAME,
             description: 'Patched redundant Cloudflared connector for mkety-production-vpc',
@@ -245,7 +246,7 @@ jobs:
             );
             if (
               stagedApp.build_pack !== 'dockerfile' ||
-              stagedApp.dockerfile !== stagedDockerfile ||
+              (stagedApp.dockerfile !== stagedDockerfileBase64 && stagedApp.dockerfile !== stagedDockerfile) ||
               stagedApp.settings?.connect_to_docker_network !== true
             ) {
               throw new Error('Existing staged connector config differs from the guarded target');
