@@ -32,8 +32,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node <<'NODE'
-          const assert = require('node:assert/strict');
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
 
           const REQUIRED_VERSION = [2026, 10, 2];
           const TARGET_VERSION = '2026.10.3';
