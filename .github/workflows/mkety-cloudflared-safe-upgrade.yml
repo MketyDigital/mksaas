@@ -147,10 +147,6 @@ jobs:
           if (currentMatches.length !== 1 || !currentMatches[0]?.uuid) {
             throw new Error('Expected exactly one existing production cloudflared app');
           }
-          if (apps.some((app) => app?.name === process.env.STAGED_APP_NAME)) {
-            throw new Error('A staged connector app already exists; inspect its state before retrying');
-          }
-
           const currentApp = await request(
             `${coolifyBase}/applications/${encodeURIComponent(currentMatches[0].uuid)}`,
             coolifyToken,
@@ -214,20 +210,48 @@ jobs:
             instant_deploy: false,
             stop_grace_period: 30,
           };
-          const created = await request(
-            `${coolifyBase}/applications/dockerfile`,
-            coolifyToken,
-            'POST',
-            createBody,
-          );
-          if (!created.uuid) throw new Error('Coolify did not create the staged connector app');
-          const stagedUuid = String(created.uuid);
-          process.stdout.write(`::add-mask::${stagedUuid}\n`);
+          const stagedMatches = apps.filter((app) => app?.name === process.env.STAGED_APP_NAME);
+          if (stagedMatches.length > 1) throw new Error('Multiple staged connector apps exist; no changes were made');
+          let stagedUuid;
+          if (stagedMatches.length === 1) {
+            stagedUuid = String(stagedMatches[0].uuid || '');
+            if (!stagedUuid) throw new Error('Existing staged connector identity is incomplete');
+            const stagedApp = await request(
+              `${coolifyBase}/applications/${encodeURIComponent(stagedUuid)}`,
+              coolifyToken,
+            );
+            if (
+              stagedApp.build_pack !== 'dockerfile' ||
+              stagedApp.dockerfile !== stagedDockerfile ||
+              stagedApp.settings?.connect_to_docker_network !== true
+            ) {
+              throw new Error('Existing staged connector config differs from the guarded target');
+            }
+          } else {
+            const created = await request(
+              `${coolifyBase}/applications/dockerfile`,
+              coolifyToken,
+              'POST',
+              createBody,
+            );
+            if (!created.uuid) throw new Error('Coolify did not create the staged connector app');
+            stagedUuid = String(created.uuid);
+          }
+          process.stdout.write(`::add-mask::${stagedUuid}\\n`);
 
-          const envPayload = await request(
+          const stagedEnvPayload = await request(
             `${coolifyBase}/applications/${encodeURIComponent(stagedUuid)}/envs`,
             coolifyToken,
-            'POST',
+          );
+          const stagedEnvs = Array.isArray(stagedEnvPayload) ? stagedEnvPayload : [];
+          const tokenEnvRows = stagedEnvs.filter(
+            (item) => item?.key === 'TUNNEL_TOKEN' && item.is_preview !== true,
+          );
+          if (tokenEnvRows.length > 1) throw new Error('Staged connector has duplicate production tunnel-token variables');
+          await request(
+            `${coolifyBase}/applications/${encodeURIComponent(stagedUuid)}/envs`,
+            coolifyToken,
+            tokenEnvRows.length === 1 ? 'PATCH' : 'POST',
             {
               key: 'TUNNEL_TOKEN',
               value: tunnelToken,
@@ -239,6 +263,7 @@ jobs:
               is_shown_once: true,
             },
           );
+
           async function deployAndWait(uuid, label) {
             const payload = await request(
               `${coolifyBase}/deploy?uuid=${encodeURIComponent(uuid)}&force=true`,
