@@ -1,0 +1,323 @@
+name: Mkety Safe Cloudflared Upgrade
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mkety-cloudflared-safe-upgrade
+  cancel-in-progress: false
+
+jobs:
+  upgrade:
+    name: Stage patched connector, then redeploy production connector
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
+      ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
+      SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
+      TUNNEL_NAME: mkety-production-vpc
+      CURRENT_APP_NAME: mkety-production-cloudflared
+      STAGED_APP_NAME: mkety-production-cloudflared-patched-replica
+    steps:
+      - name: Stage a patched replica and verify both connectors
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+
+          const REQUIRED_VERSION = [2026, 10, 2];
+          const TARGET_VERSION = '2026.10.3';
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+          function atLeast(version, required) {
+            const parts = String(version || '').match(/^(\d+)\.(\d+)\.(\d+)$/);
+            if (!parts) return false;
+            for (let i = 0; i < required.length; i += 1) {
+              const value = Number(parts[i + 1]);
+              if (value !== required[i]) return value > required[i];
+            }
+            return true;
+          }
+
+          assert.equal(atLeast('2026.10.3', REQUIRED_VERSION), true);
+          assert.equal(atLeast('2026.10.2', REQUIRED_VERSION), true);
+          assert.equal(atLeast('2026.9.9', REQUIRED_VERSION), false);
+          assert.equal(atLeast('unknown', REQUIRED_VERSION), false);
+
+          for (const key of ['COOLIFY_API_TOKEN', 'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID']) {
+            if (!process.env[key]) throw new Error(`Required credential is missing: ${key}`);
+          }
+
+          async function request(url, token, method = 'GET', body) {
+            let response;
+            try {
+              response = await fetch(url, {
+                method,
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  Accept: 'application/json',
+                  ...(body ? { 'Content-Type': 'application/json' } : {}),
+                },
+                ...(body ? { body: JSON.stringify(body) } : {}),
+                signal: AbortSignal.timeout(30000),
+              });
+            } catch {
+              throw new Error('Provider API request failed before receiving a response');
+            }
+            if (!response.ok) throw new Error(`Provider API request failed (HTTP ${response.status})`);
+            const raw = await response.text();
+            if (!raw) return {};
+            try {
+              return JSON.parse(raw);
+            } catch {
+              throw new Error('Provider API returned invalid JSON');
+            }
+          }
+
+          const cfBase = 'https://api.cloudflare.com/client/v4';
+          const accountPath = `${cfBase}/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}`;
+          const coolifyBase = `${process.env.COOLIFY_URL.replace(/\/$/, '')}/api/v1`;
+          const cfToken = process.env.CLOUDFLARE_API_TOKEN;
+          const coolifyToken = process.env.COOLIFY_API_TOKEN;
+
+          const tunnelList = await request(
+            `${accountPath}/cfd_tunnel?is_deleted=false&per_page=100`,
+            cfToken,
+          );
+          if (tunnelList.success !== true || !Array.isArray(tunnelList.result)) {
+            throw new Error('Cloudflare tunnel list could not be read');
+          }
+          const matches = tunnelList.result.filter((item) => item?.name === process.env.TUNNEL_NAME);
+          if (matches.length !== 1 || !matches[0]?.id) {
+            throw new Error('Expected exactly one production VPC tunnel');
+          }
+          const tunnel = matches[0];
+
+          const connections = async () => {
+            const payload = await request(
+              `${accountPath}/cfd_tunnel/${encodeURIComponent(tunnel.id)}/connections`,
+              cfToken,
+            );
+            if (payload.success !== true || !Array.isArray(payload.result)) {
+              throw new Error('Cloudflare connector state could not be read');
+            }
+            return payload.result.map((client) => ({
+              architecture: client.arch || 'unknown',
+              versions: [...new Set([
+                client.version,
+                ...(Array.isArray(client.conns) ? client.conns.map((conn) => conn?.client_version) : []),
+              ].filter((version) => typeof version === 'string'))],
+              connectionCount: Array.isArray(client.conns) ? client.conns.length : 0,
+            }));
+          };
+
+          const originPayload = await request(
+            `${accountPath}/connectivity/directory/services`,
+            cfToken,
+          );
+          const origins = Array.isArray(originPayload.result) ? originPayload.result : [];
+          const expectedOrigins = ['mkety-production-pgbouncer-v2', 'mkety-production-postgres'];
+          for (const name of expectedOrigins) {
+            const origin = origins.find((item) => item?.name === name);
+            if (
+              !origin ||
+              origin.type !== 'tcp' ||
+              origin.tls_settings?.cert_verification_mode !== 'verify_ca' ||
+              origin.tls_settings?.no_tls_verify === true
+            ) {
+              throw new Error('VPC origin TLS verification preflight did not pass; no changes were made');
+            }
+          }
+
+          const appsPayload = await request(`${coolifyBase}/applications`, coolifyToken);
+          const apps = Array.isArray(appsPayload)
+            ? appsPayload
+            : Array.isArray(appsPayload?.data) ? appsPayload.data : [];
+          const currentMatches = apps.filter((app) => app?.name === process.env.CURRENT_APP_NAME);
+          if (currentMatches.length !== 1 || !currentMatches[0]?.uuid) {
+            throw new Error('Expected exactly one existing production cloudflared app');
+          }
+          const currentApp = await request(
+            `${coolifyBase}/applications/${encodeURIComponent(currentMatches[0].uuid)}`,
+            coolifyToken,
+          );
+          if (
+            currentApp.git_repository !== 'MketyDigital/mksaas' ||
+            currentApp.git_branch !== 'ops/precutover-diagnostics-20260913' ||
+            currentApp.build_pack !== 'dockerfile' ||
+            currentApp.dockerfile_location !== '/ops/cloudflared-vpc/Dockerfile' ||
+            currentApp.settings?.connect_to_docker_network !== true
+          ) {
+            throw new Error('Production connector identity or network configuration changed; no changes were made');
+          }
+
+          const source = await fetch(
+            'https://raw.githubusercontent.com/MketyDigital/mksaas/ops/precutover-diagnostics-20260913/ops/cloudflared-vpc/Dockerfile',
+            { signal: AbortSignal.timeout(20000) },
+          );
+          if (!source.ok) throw new Error('Could not verify the production connector Dockerfile');
+          const dockerfile = await source.text();
+          if (!/^FROM\s+cloudflare\/cloudflared:latest\s*$/m.test(dockerfile)) {
+            throw new Error('The production connector Dockerfile no longer uses the expected latest tag');
+          }
+
+          const initialClients = await connections();
+          const initialVersions = initialClients.flatMap((client) => client.versions);
+          if (initialVersions.length === 0) throw new Error('No active production connector was found');
+          if (initialVersions.every((version) => atLeast(version, REQUIRED_VERSION))) {
+            console.log('Cloudflared connectors are already patched; no changes were made.');
+            process.exit(0);
+          }
+
+          const tokenPayload = await request(
+            `${accountPath}/cfd_tunnel/${encodeURIComponent(tunnel.id)}/token`,
+            cfToken,
+          );
+          if (tokenPayload.success !== true || typeof tokenPayload.result !== 'string' || !tokenPayload.result) {
+            throw new Error('Cloudflare did not return a usable tunnel token; no changes were made');
+          }
+          const tunnelToken = tokenPayload.result;
+          process.stdout.write(`::add-mask::${tunnelToken}\n`);
+
+          const stagedDockerfile = [
+            'FROM cloudflare/cloudflared:2026.10.3',
+            'CMD ["tunnel","--no-autoupdate","--loglevel","info","--metrics","0.0.0.0:2000","run"]',
+            '',
+          ].join('\n');
+          const createBody = {
+            project_uuid: process.env.PROJECT_UUID,
+            server_uuid: process.env.SERVER_UUID,
+            environment_uuid: process.env.ENVIRONMENT_UUID,
+            build_pack: 'dockerfile',
+            dockerfile: stagedDockerfile,
+            ports_exposes: '2000',
+            name: process.env.STAGED_APP_NAME,
+            description: 'Patched redundant Cloudflared connector for mkety-production-vpc',
+            custom_internal_name: 'mkety-production-cloudflared-patched',
+            connect_to_docker_network: true,
+            autogenerate_domain: false,
+            is_preview_deployments_enabled: false,
+            instant_deploy: false,
+            stop_grace_period: 30,
+          };
+          const stagedMatches = apps.filter((app) => app?.name === process.env.STAGED_APP_NAME);
+          if (stagedMatches.length > 1) throw new Error('Multiple staged connector apps exist; no changes were made');
+          let stagedUuid;
+          if (stagedMatches.length === 1) {
+            stagedUuid = String(stagedMatches[0].uuid || '');
+            if (!stagedUuid) throw new Error('Existing staged connector identity is incomplete');
+            const stagedApp = await request(
+              `${coolifyBase}/applications/${encodeURIComponent(stagedUuid)}`,
+              coolifyToken,
+            );
+            if (
+              stagedApp.build_pack !== 'dockerfile' ||
+              stagedApp.dockerfile !== stagedDockerfile ||
+              stagedApp.settings?.connect_to_docker_network !== true
+            ) {
+              throw new Error('Existing staged connector config differs from the guarded target');
+            }
+          } else {
+            const created = await request(
+              `${coolifyBase}/applications/dockerfile`,
+              coolifyToken,
+              'POST',
+              createBody,
+            );
+            if (!created.uuid) throw new Error('Coolify did not create the staged connector app');
+            stagedUuid = String(created.uuid);
+          }
+          process.stdout.write(`::add-mask::${stagedUuid}\\n`);
+
+          const stagedEnvPayload = await request(
+            `${coolifyBase}/applications/${encodeURIComponent(stagedUuid)}/envs`,
+            coolifyToken,
+          );
+          const stagedEnvs = Array.isArray(stagedEnvPayload) ? stagedEnvPayload : [];
+          const tokenEnvRows = stagedEnvs.filter(
+            (item) => item?.key === 'TUNNEL_TOKEN' && item.is_preview !== true,
+          );
+          if (tokenEnvRows.length > 1) throw new Error('Staged connector has duplicate production tunnel-token variables');
+          await request(
+            `${coolifyBase}/applications/${encodeURIComponent(stagedUuid)}/envs`,
+            coolifyToken,
+            tokenEnvRows.length === 1 ? 'PATCH' : 'POST',
+            {
+              key: 'TUNNEL_TOKEN',
+              value: tunnelToken,
+              is_preview: false,
+              is_literal: true,
+              is_multiline: false,
+              is_runtime: true,
+              is_buildtime: false,
+              is_shown_once: true,
+            },
+          );
+
+          async function deployAndWait(uuid, label) {
+            const payload = await request(
+              `${coolifyBase}/deploy?uuid=${encodeURIComponent(uuid)}&force=true`,
+              coolifyToken,
+              'POST',
+            );
+            const deploymentId = payload?.deployments?.[0]?.deployment_uuid;
+            if (!deploymentId) throw new Error(`${label} deployment was not accepted by Coolify`);
+            for (let i = 0; i < 120; i += 1) {
+              const state = await request(
+                `${coolifyBase}/deployments/${encodeURIComponent(deploymentId)}`,
+                coolifyToken,
+              );
+              const status = String(state.status || '').toLowerCase();
+              if (['finished', 'success', 'successful', 'succeeded', 'completed'].includes(status)) return;
+              if (['failed', 'failure', 'error', 'cancelled', 'canceled'].includes(status)) {
+                throw new Error(`${label} deployment failed; the staged replica remains in place`);
+              }
+              await sleep(3000);
+            }
+            throw new Error(`${label} deployment timed out; the staged replica remains in place`);
+          }
+
+          async function waitForVersions(predicate, label) {
+            for (let i = 0; i < 40; i += 1) {
+              const clients = await connections();
+              if (predicate(clients)) return clients;
+              await sleep(10000);
+            }
+            const clients = await connections();
+            throw new Error(`${label} verification failed; current connector state: ${JSON.stringify(clients)}`);
+          }
+
+          await deployAndWait(stagedUuid, 'Staged replica');
+          const stagedClients = await waitForVersions((clients) => {
+            const versions = clients.flatMap((client) => client.versions);
+            return clients.length >= 2 && versions.some((version) => atLeast(version, REQUIRED_VERSION));
+          }, 'Staged patched replica');
+          console.log('Patched replica is connected; redeploying the existing connector while the replica serves the tunnel.');
+
+          await deployAndWait(String(currentMatches[0].uuid), 'Existing connector');
+          const finalClients = await waitForVersions((clients) => {
+            const versions = clients.flatMap((client) => client.versions);
+            return clients.length >= 2 && versions.length >= 2 && versions.every((version) => atLeast(version, REQUIRED_VERSION));
+          }, 'Production connector upgrade');
+
+          console.log('CLOUDFLARED_SAFE_UPGRADE ' + JSON.stringify({
+            tunnel: process.env.TUNNEL_NAME,
+            status: tunnel.status || 'unknown',
+            minimumVersion: '2026.10.2',
+            stagedImageVersion: TARGET_VERSION,
+            clients: finalClients,
+            stagedReplicaRetained: true,
+            originTlsVerification: 'verify_ca',
+            changesMade: true,
+          }));
+          NODE
