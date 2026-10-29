@@ -1,0 +1,199 @@
+name: Mkety Cloudflared Remediation Preflight
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mkety-cloudflared-remediation-preflight.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Inspect production connector configuration safely
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment: production
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARED_TUNNEL_NAME: mkety-production-vpc
+      COOLIFY_APPLICATION_NAME: mkety-production-cloudflared
+    steps:
+      - name: Read safe configuration summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const required = [
+            'COOLIFY_API_TOKEN',
+            'CLOUDFLARE_API_TOKEN',
+            'CLOUDFLARE_ACCOUNT_ID',
+            'COOLIFY_URL',
+          ];
+          for (const key of required) {
+            if (!process.env[key]) throw new Error(`Required credential/configuration is missing: ${key}`);
+          }
+
+          async function getJson(url, token) {
+            let response;
+            try {
+              response = await fetch(url, {
+                headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+                signal: AbortSignal.timeout(20000),
+              });
+            } catch {
+              throw new Error('A read-only provider request failed before receiving a response');
+            }
+            if (!response.ok) throw new Error(`A read-only provider request failed (HTTP ${response.status})`);
+            try {
+              return await response.json();
+            } catch {
+              throw new Error('A provider returned invalid JSON');
+            }
+          }
+
+          const coolifyBase = `${process.env.COOLIFY_URL.replace(/\/$/, '')}/api/v1`;
+          const applicationsPayload = await getJson(
+            `${coolifyBase}/applications`,
+            process.env.COOLIFY_API_TOKEN,
+          );
+          const applications = Array.isArray(applicationsPayload)
+            ? applicationsPayload
+            : Array.isArray(applicationsPayload?.data) ? applicationsPayload.data : [];
+          const matches = applications.filter(
+            (app) => app?.name === process.env.COOLIFY_APPLICATION_NAME,
+          );
+          if (matches.length !== 1 || !matches[0]?.uuid) {
+            throw new Error('Expected exactly one production cloudflared application in Coolify');
+          }
+
+          const app = await getJson(
+            `${coolifyBase}/applications/${encodeURIComponent(matches[0].uuid)}`,
+            process.env.COOLIFY_API_TOKEN,
+          );
+          const envPayload = await getJson(
+            `${coolifyBase}/applications/${encodeURIComponent(matches[0].uuid)}/envs`,
+            process.env.COOLIFY_API_TOKEN,
+          );
+          const envs = Array.isArray(envPayload) ? envPayload : [];
+          const tokenVariables = envs
+            .filter((item) => /tunnel.*token|token.*tunnel/i.test(String(item?.key || '')))
+            .map((item) => ({
+              key: String(item.key).slice(0, 80),
+              configured: [item.real_value, item.value].some(
+                (value) => typeof value === 'string' && value.length > 0,
+              ),
+              shownOnce: item.is_shown_once === true,
+              sharedReference: typeof item.value === 'string' && /^\{\{[^}]+\}\}$/.test(item.value),
+            }));
+
+          const startCommand = typeof app.start_command === 'string' ? app.start_command : '';
+          const tokenReferences = [...startCommand.matchAll(/\$\{?([A-Z0-9_]*TOKEN[A-Z0-9_]*)\}?/g)]
+            .map((match) => match[1]);
+          const safeApp = {
+            name: app.name || null,
+            status: app.status || null,
+            buildPack: app.build_pack || null,
+            dockerImage: app.docker_registry_image_name || null,
+            dockerImageTag: app.docker_registry_image_tag || null,
+            commandConfigured: startCommand.length > 0,
+            commandReferencesCloudflared: /cloudflared/i.test(startCommand),
+            commandLooksLikeTunnelRun: /tunnel.*run/i.test(startCommand),
+            commandUsesTokenFlag: /(?:--token|TUNNEL_TOKEN|CF_TUNNEL_TOKEN)/i.test(startCommand),
+            commandTokenVariableNames: [...new Set(tokenReferences)],
+            networkConnected: app.connect_to_docker_network === true,
+            projectConfigured: Boolean(app.project_uuid),
+            environmentConfigured: Boolean(app.environment_uuid),
+            serverConfigured: Boolean(app.server_uuid),
+            destinationConfigured: Boolean(app.destination_uuid),
+            tunnelTokenVariables: tokenVariables,
+          };
+
+          const cfBase = 'https://api.cloudflare.com/client/v4';
+          const accountPath = `${cfBase}/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}`;
+          const tunnels = [];
+          for (let page = 1; page <= 50; page += 1) {
+            const payload = await getJson(
+              `${accountPath}/cfd_tunnel?is_deleted=false&per_page=100&page=${page}`,
+              process.env.CLOUDFLARE_API_TOKEN,
+            );
+            if (payload.success !== true || !Array.isArray(payload.result)) {
+              throw new Error('Cloudflare Tunnel metadata could not be read safely');
+            }
+            tunnels.push(...payload.result);
+            const count = payload.result_info?.count;
+            const expected = typeof count === 'number' ? count : Number(count);
+            if (Number.isInteger(expected) && expected >= 0) {
+              if (tunnels.length > expected) throw new Error('Cloudflare returned inconsistent Tunnel pagination metadata');
+              if (tunnels.length === expected) break;
+              if (payload.result.length === 0) throw new Error('Cloudflare Tunnel pagination ended early');
+            } else if (payload.result.length < 100) {
+              break;
+            }
+            if (page === 50) throw new Error('Cloudflare Tunnel pagination exceeded the safety limit');
+          }
+
+          const tunnelMatches = tunnels.filter(
+            (tunnel) => tunnel?.name === process.env.CLOUDFLARED_TUNNEL_NAME && tunnel?.id,
+          );
+          if (tunnelMatches.length !== 1) {
+            throw new Error('Expected exactly one production VPC Tunnel in Cloudflare');
+          }
+          const tunnel = tunnelMatches[0];
+          const connectionsPayload = await getJson(
+            `${accountPath}/cfd_tunnel/${encodeURIComponent(tunnel.id)}/connections`,
+            process.env.CLOUDFLARE_API_TOKEN,
+          );
+          if (connectionsPayload.success !== true || !Array.isArray(connectionsPayload.result)) {
+            throw new Error('Cloudflare Tunnel connector state could not be read safely');
+          }
+
+          const clients = connectionsPayload.result.map((client) => ({
+            architecture: typeof client.arch === 'string' ? client.arch : 'unknown',
+            version: typeof client.version === 'string' ? client.version : null,
+            connectionCount: Array.isArray(client.conns) ? client.conns.length : 0,
+            connectionVersions: [...new Set(
+              (Array.isArray(client.conns) ? client.conns : [])
+                .map((connection) => connection?.client_version)
+                .filter((version) => typeof version === 'string'),
+            )],
+          }));
+
+          let originServices = [];
+          try {
+            const payload = await getJson(
+              `${accountPath}/connectivity/directory/services`,
+              process.env.CLOUDFLARE_API_TOKEN,
+            );
+            originServices = Array.isArray(payload.result) ? payload.result : [];
+          } catch {
+            // This optional read must not hide the core app/connector facts.
+          }
+          const safeOriginServices = originServices
+            .filter((service) => service?.host?.hostname === 'db-runtime.mkety.com')
+            .map((service) => ({
+              name: typeof service.name === 'string' ? service.name : null,
+              type: typeof service.type === 'string' ? service.type : null,
+              tcpPort: service.tcp_port ?? null,
+              appProtocol: typeof service.app_protocol === 'string' ? service.app_protocol : null,
+              certVerificationMode: service.tls_settings?.cert_verification_mode || null,
+              hasTunnel: Boolean(service.host?.network?.tunnel_id || service.host?.resolver_network?.tunnel_id),
+            }));
+
+          console.log('CLOUDFLARED_REMEDIATION_PREFLIGHT ' + JSON.stringify({
+            application: safeApp,
+            tunnel: {
+              name: tunnel.name,
+              status: tunnel.status || null,
+              connectorCount: clients.length,
+              clients,
+            },
+            originServices: safeOriginServices,
+            changesMade: false,
+          }));
+          NODE
