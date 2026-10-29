@@ -74,8 +74,31 @@ jobs:
             } catch {
               throw new Error('Provider API request failed before receiving a response');
             }
-            if (!response.ok) throw new Error(`Provider API request failed (HTTP ${response.status})`);
             const raw = await response.text();
+            if (!response.ok) {
+              let detail = '';
+              try {
+                const payload = JSON.parse(raw);
+                const messages = [];
+                if (typeof payload?.message === 'string') messages.push(payload.message);
+                if (payload?.errors && typeof payload.errors === 'object' && !Array.isArray(payload.errors)) {
+                  for (const [field, value] of Object.entries(payload.errors)) {
+                    const entries = Array.isArray(value) ? value : [value];
+                    for (const entry of entries) {
+                      if (typeof entry === 'string') messages.push(`${field}: ${entry}`);
+                    }
+                  }
+                }
+                detail = messages
+                  .join('; ')
+                  .replace(/Bearer\\s+[^\\s"'`]+/gi, 'Bearer [redacted]')
+                  .replace(/[A-Za-z0-9_-]{40,}/g, '[redacted]')
+                  .slice(0, 1000);
+              } catch {
+                detail = '';
+              }
+              throw new Error(`Provider API request failed (HTTP ${response.status})${detail ? `: ${detail}` : ''}`);
+            }
             if (!raw) return {};
             try {
               return JSON.parse(raw);
