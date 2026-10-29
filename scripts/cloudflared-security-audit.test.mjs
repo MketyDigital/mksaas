@@ -37,8 +37,8 @@ test('paginates tunnels and connections and emits only sanitized version data', 
       throw new Error(`Unexpected endpoint ${path}`);
     }
 
-    const totalCount = path.endsWith('/cfd_tunnel') ? 2 : path.includes('11111111') ? 2 : 1;
-    return new Response(JSON.stringify({ success: true, result, result_info: { page, per_page: 100, total_count: totalCount } }), {
+    const count = path.endsWith('/cfd_tunnel') ? 2 : path.includes('11111111') ? 2 : 1;
+    return new Response(JSON.stringify({ success: true, result, result_info: { page, per_page: 100, count, total_count: 2000 } }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     });
@@ -66,7 +66,7 @@ test('reports tunnels with no active connections without claiming a host is patc
     const result = parsed.pathname.endsWith('/cfd_tunnel')
       ? [{ id: '33333333-3333-4333-8333-333333333333', name: 'offline', status: 'inactive' }]
       : [];
-    return new Response(JSON.stringify({ success: true, result, result_info: { page: 1, per_page: 100, total_count: parsed.pathname.endsWith('/cfd_tunnel') ? 1 : 0 } }), { status: 200 });
+    return new Response(JSON.stringify({ success: true, result, result_info: { page: 1, per_page: 100, count: parsed.pathname.endsWith('/cfd_tunnel') ? 1 : 0, total_count: 2000 } }), { status: 200 });
   };
 
   const result = await fetchTunnelAudit({ accountId: 'a'.repeat(32), apiToken: 'token', fetcher });
@@ -90,17 +90,37 @@ test('continues pagination when a full page has a null total-pages value', async
             status: 'inactive',
           }))
         : [];
-      return new Response(JSON.stringify({ success: true, result, result_info: { page, per_page: 100, total_count: null } }), { status: 200 });
+      return new Response(JSON.stringify({ success: true, result, result_info: { page, per_page: 100, count: null, total_count: 2000 } }), { status: 200 });
     }
 
     connectionCalls += 1;
-    return new Response(JSON.stringify({ success: true, result: [], result_info: { page: 1, per_page: 100, total_count: 0 } }), { status: 200 });
+    return new Response(JSON.stringify({ success: true, result: [], result_info: { page: 1, per_page: 100, count: 0, total_count: 2000 } }), { status: 200 });
   };
 
   const result = await fetchTunnelAudit({ accountId: 'a'.repeat(32), apiToken: 'token', fetcher });
   assert.equal(tunnelPageCalls, 2);
   assert.equal(connectionCalls, 100);
   assert.equal(result.length, 100);
+});
+
+test('uses request result count instead of the unfiltered total count', async () => {
+  let calls = 0;
+  const fetcher = async (url) => {
+    calls += 1;
+    const path = new URL(url).pathname;
+    const result = path.endsWith('/cfd_tunnel')
+      ? [{ id: '44444444-4444-4444-8444-444444444444', name: 'prod', status: 'healthy' }]
+      : [{ arch: 'linux_amd64', version: '2026.10.2', conns: [{ client_version: '2026.10.2' }] }];
+    return new Response(JSON.stringify({
+      success: true,
+      result,
+      result_info: { count: 1, page: 1, per_page: 100, total_count: 2000 },
+    }), { status: 200 });
+  };
+
+  const result = await fetchTunnelAudit({ accountId: 'a'.repeat(32), apiToken: 'token', fetcher });
+  assert.equal(calls, 2);
+  assert.equal(result[0].assessment, 'patched');
 });
 
 test('does not expose a raw Cloudflare API error body', async () => {
