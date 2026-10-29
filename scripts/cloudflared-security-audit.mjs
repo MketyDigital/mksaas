@@ -79,15 +79,15 @@ export async function fetchTunnelAudit({ accountId, apiToken, fetcher = globalTh
       const separator = path.includes('?') ? '&' : '?';
       const payload = await request(`${path}${separator}per_page=${PAGE_SIZE}&page=${page}`);
       rows.push(...payload.result);
-      const rawTotalCount = payload.result_info?.total_count;
-      const totalCount = typeof rawTotalCount === 'number'
-        ? rawTotalCount
-        : typeof rawTotalCount === 'string' && rawTotalCount.trim().length > 0
-          ? Number(rawTotalCount)
+      const rawCount = payload.result_info?.count;
+      const resultCount = typeof rawCount === 'number'
+        ? rawCount
+        : typeof rawCount === 'string' && rawCount.trim().length > 0
+          ? Number(rawCount)
           : Number.NaN;
-      if (Number.isInteger(totalCount) && totalCount >= 0) {
-        if (rows.length > totalCount) throw new Error('Cloudflare API returned inconsistent pagination metadata');
-        if (rows.length === totalCount) return rows;
+      if (Number.isInteger(resultCount) && resultCount >= 0) {
+        if (rows.length > resultCount) throw new Error('Cloudflare API returned inconsistent pagination metadata');
+        if (rows.length === resultCount) return rows;
         if (payload.result.length === 0) throw new Error('Cloudflare API pagination ended before all records were returned');
       } else if (payload.result.length === 0) {
         return rows;
