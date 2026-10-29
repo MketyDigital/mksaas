@@ -75,7 +75,7 @@ test('reports tunnels with no active connections without claiming a host is patc
   assert.equal(result[0].connectionCount, 0);
 });
 
-test('continues pagination when a full page has a null total-pages value', async () => {
+test('continues pagination with an unknown filtered count and ignores the unfiltered total', async () => {
   let tunnelPageCalls = 0;
   let connectionCalls = 0;
   const fetcher = async (url) => {
