@@ -105,7 +105,7 @@ export async function fetchTunnelAudit({ accountId, apiToken, fetcher = globalTh
       throw new Error('Cloudflare returned a tunnel with an invalid identifier');
     }
 
-    const clients = await getAllPages(`${accountPath}/cfd_tunnel/${tunnel.id}/connections`);
+    const clients = (await request(`${accountPath}/cfd_tunnel/${tunnel.id}/connections`)).result;
     const assessedClients = clients.map((client) => {
       const versions = [...new Set([
         client?.version,
