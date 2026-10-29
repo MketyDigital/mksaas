@@ -75,8 +75,10 @@ jobs:
               throw new Error('Provider API request failed before receiving a response');
             }
             if (!response.ok) throw new Error(`Provider API request failed (HTTP ${response.status})`);
+            const raw = await response.text();
+            if (!raw) return {};
             try {
-              return await response.json();
+              return JSON.parse(raw);
             } catch {
               throw new Error('Provider API returned invalid JSON');
             }
@@ -237,10 +239,6 @@ jobs:
               is_shown_once: true,
             },
           );
-          if (envPayload?.message && !envPayload?.uuid && !envPayload?.id) {
-            throw new Error('Coolify did not accept the staged tunnel token');
-          }
-
           async function deployAndWait(uuid, label) {
             const payload = await request(
               `${coolifyBase}/deploy?uuid=${encodeURIComponent(uuid)}&force=true`,
