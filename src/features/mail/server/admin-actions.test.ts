@@ -50,17 +50,21 @@ jest.mock('../commercial/plans', () => ({ isMailPlanKey: jest.fn() }));
 jest.mock('../commercial/enterprise-offers', () => ({ parseMailEnterpriseOfferInput: jest.fn() }));
 
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
+import { withServerActionDatabase } from '@/shared/db/server-action';
 import { db } from '@/shared/db';
 import { auditEvents, mailWorkspaces, tenantEntitlementOverrides, tenants } from '@/shared/db/schema';
 import { requirePermission } from '@/shared/lib/permissions';
 import { logAuditEvent } from '@/shared/services/audit-service';
 
-import { bootstrapFirstPartyMailWorkspace } from './admin-actions';
+import { bootstrapFirstPartyMailWorkspace, createFirstPartySmtpCredential } from './admin-actions';
+import { getFirstPartyMailTenantId } from './runtime-config';
 
 const mockRequireAccess = requirePlatformControlAccess as jest.MockedFunction<typeof requirePlatformControlAccess>;
 const mockRequirePermission = requirePermission as jest.MockedFunction<typeof requirePermission>;
 const mockAudit = logAuditEvent as jest.MockedFunction<typeof logAuditEvent>;
 const mockTransaction = db.transaction as jest.Mock;
+const mockServerActionDatabase = withServerActionDatabase as jest.Mock;
+const mockFirstPartyTenantId = getFirstPartyMailTenantId as jest.Mock;
 
 describe('first-party Mail workspace bootstrap', () => {
   let grantExists: boolean;
@@ -240,4 +244,22 @@ describe('first-party Mail workspace bootstrap', () => {
     ]);
   });
 
+});
+
+
+describe('first-party SMTP credential server action', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRequireAccess.mockResolvedValue({ userId: 'operator-1', email: 'operator@mkety.com' } as never);
+    mockRequirePermission.mockResolvedValue(undefined as never);
+    mockFirstPartyTenantId.mockReturnValue('');
+    mockServerActionDatabase.mockImplementation((work: () => Promise<unknown>) => work());
+  });
+
+  it('runs with a fresh server-action database context', async () => {
+    const result = await createFirstPartySmtpCredential('mkety-ops', {}, new FormData());
+
+    expect(mockServerActionDatabase).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ error: 'First-party Mail tenant is not configured.' });
+  });
 });
