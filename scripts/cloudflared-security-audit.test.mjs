@@ -28,9 +28,10 @@ test('paginates tunnels and connections and emits only sanitized version data', 
         ? [{ id: '11111111-1111-4111-8111-111111111111', name: 'prod-linux', status: 'healthy' }]
         : [{ id: '22222222-2222-4222-8222-222222222222', name: 'mac-connector', status: 'healthy' }];
     } else if (path.endsWith('/11111111-1111-4111-8111-111111111111/connections')) {
-      result = page === 1
-        ? [{ arch: 'linux_amd64', version: '2026.10.2', conns: [{ client_version: '2026.10.2', origin_ip: '192.0.2.1' }] }]
-        : [{ arch: 'linux_amd64', version: '2026.10.2', conns: [{ client_version: '2026.10.2', origin_ip: '192.0.2.2' }] }];
+      result = [
+        { arch: 'linux_amd64', version: '2026.10.2', conns: [{ client_version: '2026.10.2', origin_ip: '192.0.2.1' }] },
+        { arch: 'linux_amd64', version: '2026.10.2', conns: [{ client_version: '2026.10.2', origin_ip: '192.0.2.2' }] },
+      ];
     } else if (path.endsWith('/22222222-2222-4222-8222-222222222222/connections')) {
       result = [{ arch: 'darwin_arm64', version: '2026.10.2', conns: [{ client_version: '2026.10.2', origin_ip: '192.0.2.3' }] }];
     } else {
@@ -46,8 +47,10 @@ test('paginates tunnels and connections and emits only sanitized version data', 
 
   const result = await fetchTunnelAudit({ accountId, apiToken, fetcher });
 
-  assert.equal(calls.length, 5);
+  assert.equal(calls.length, 4);
   assert.ok(calls.every(({ options }) => options.method === 'GET'));
+  assert.ok(calls.filter(({ url }) => new URL(url).pathname.endsWith('/connections'))
+    .every(({ url }) => !new URL(url).searchParams.has('page') && !new URL(url).searchParams.has('per_page')));
   assert.ok(calls.every(({ options }) => options.headers.Authorization === `Bearer ${apiToken}`));
   assert.deepEqual(result.map(({ name, assessment, connectorCount, connectionCount }) => ({
     name, assessment, connectorCount, connectionCount,
