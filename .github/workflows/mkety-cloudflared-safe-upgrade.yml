@@ -14,7 +14,7 @@ jobs:
   upgrade:
     name: Stage patched connector, then redeploy production connector
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     environment: production
     env:
       COOLIFY_URL: https://deploy.mkety.com
@@ -33,7 +33,7 @@ jobs:
         run: |
           set -euo pipefail
           node <<'NODE'
-          import assert from 'node:assert/strict';
+          const assert = require('node:assert/strict');
 
           const REQUIRED_VERSION = [2026, 10, 2];
           const TARGET_VERSION = '2026.10.3';
