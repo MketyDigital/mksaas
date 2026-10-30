@@ -1,3 +1,32 @@
+# Current status — 2026-10-30
+
+> This section is the current continuation state. The dated sections below are historical snapshots; follow this section wherever old status statements conflict.
+
+## Production status
+
+- Repository main is `62f6b014a97167f6f2a2c23578d4330550756dbd` (2026-10-29). PR #467 fixed first-party SMTP credential creation to run inside a fresh server-action database context.
+- The dedicated `app.mkety.com` production repair completed successfully in App Host Production Repair run #37 on 2026-10-21. That hostname is distinct from `mkety.app`; the Oct 29 Mail deployment did not alter `mkety.app` customer or media mappings.
+- Mkety Mail Production run #113 succeeded on 2026-10-29 at the current main SHA. Mail domain setup diagnostics run #26 also succeeded and was read-only.
+- Mail is **not yet accepted for live sending**. The deployment report showed root `mkety.com` SPF, DKIM, and DMARC pending; root sending was enabled, while Cloudflare ingress remained disabled. First-party SMTP credential creation and actual outbound delivery have not been verified.
+- The Platform Control login handoff failed on 2026-10-30 with “Could not connect to ChatGPT browser.” No login or Mail UI action was completed. Do not claim the SMTP test passed.
+- Mkety ZITADEL Auth and Mail Reconcile run #26 (2026-10-24) failed at SMTP configuration validation because `MKETY_FIRST_PARTY_MAIL_SMTP_PASSWORD` was missing at that time. The preceding exact failed-signup duplicate-cleanup step completed; the SMTP provider test and provider activation were skipped. The secret’s current presence is unverified. Do not rerun this combined workflow as a Mail-only test: it changes ZITADEL login/user state before it validates SMTP configuration.
+
+## AI status
+
+- Mkety Public AI Production Hotfix run #8 succeeded on 2026-10-23 at release SHA `e419e8c922492c8abbd9f745ac637d0b4c8e6187`. Its production migration, Worker deployment, routing setup, and live smoke all passed; the smoke required an actual provider answer and rejected the unavailable fallback.
+- Public AI routing and provider connections remain controlled independently in Platform Control. The Enterprise customer-inference gate does not globally disable Public or Workspace AI.
+- Enterprise customer inference remains deliberately **OFF**. Enterprise AI Production run #32 on 2026-10-23 was skipped; no production enablement occurred. The guarded promotion requires benchmark, commercial, white-label-domain, and registrar evidence.
+- The commercial/accounting acceptance and managed-model benchmark were previously recorded as passed. Real DomainNameAPI OT&E/lifecycle acceptance and a controlled customer white-label hostname acceptance remain open. Keep `customerInferenceEnabled` OFF until those external gates are completed and reviewed.
+
+## Scope and safety record
+
+- No Assist production workflow or runtime was changed in the Oct 29 Mail/AI work.
+- No `mkety.app` DNS or customer/media mapping was changed in the Oct 29 Mail/AI work.
+- No new DNS mutation, Enterprise AI promotion, SMTP credential creation, or outbound message was performed in the Oct 29–30 continuation.
+- Useful run evidence: [Mail Production #113](https://github.com/MketyDigital/mksaas/actions/runs/40940246964), [Mail domain diagnostics #26](https://github.com/MketyDigital/mksaas/actions/runs/40941372647), [Public AI Production #8](https://github.com/MketyDigital/mksaas/actions/runs/39988937106), [Enterprise AI Production #32](https://github.com/MketyDigital/mksaas/actions/runs/39954873742), [App Host Production Repair #37](https://github.com/MketyDigital/mksaas/actions/runs/39577667661), and [ZITADEL Auth and Mail Reconcile #26](https://github.com/MketyDigital/mksaas/actions/runs/40137608433).
+
+---
+
 ## 2026-09-28 post-hotfix reconciliation and exact-head verification
 
 - PR #160 merged to main as `909c3d31a524075763c0a1c7d7985f89254e0b3a`; its guarded app.mkety.com repair workflow has not yet been executed in production.
