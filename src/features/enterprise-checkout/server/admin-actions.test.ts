@@ -56,7 +56,7 @@ describe('admin-issued Enterprise payment links', () => {
         projectName: 'Trading Infrastructure',
         projectDescription: 'Agreed implementation scope.\n\nPayment schedule: 50% deposit',
       }),
-      expect.objectContaining({ idempotencyKey: expect.stringMatching(/^admin-/) }),
+      expect.objectContaining({ idempotencyKey: expect.stringMatching(/^admin-/), deferNowPaymentsInvoice: true }),
     );
     expect(result).toEqual(expect.objectContaining({ ok: true, orderId: 'MKETY-ENT-1', provider: 'nowpayments' }));
   });

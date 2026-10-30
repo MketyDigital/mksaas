@@ -4,6 +4,7 @@ import { parseEnterpriseCheckoutInput } from '../domain';
 import type { EnterpriseCheckoutResult, EnterprisePaymentProvider } from '../domain';
 import { getEnterprisePaymentProvider } from '../providers/registry';
 import type { EnterpriseCheckoutProviderAdapter } from '../providers/types';
+import { createEnterprisePaymentCapability, hashEnterprisePaymentToken, isEnterprisePaymentCapabilityActive } from './payment-capability';
 
 interface EnterpriseCheckoutRequestContext {
   idempotencyKey: string;
@@ -11,6 +12,7 @@ interface EnterpriseCheckoutRequestContext {
   mailEnterpriseTenantId?: string;
   onOrderCreated?: (orderId: string) => Promise<void>;
   onCheckoutFailed?: (orderId: string) => Promise<void>;
+  deferNowPaymentsInvoice?: boolean;
 }
 
 interface EnterpriseCheckoutServiceDependencies {
@@ -81,6 +83,12 @@ export function createEnterpriseCheckoutService(dependencies: EnterpriseCheckout
       }
 
       const orderId = createOrderId();
+      const capability = context.deferNowPaymentsInvoice && input.provider === 'nowpayments'
+        ? await createEnterprisePaymentCapability()
+        : null;
+      const redirectUrl = capability
+        ? `https://mkety.com/payment/enterprise/checkout?token=${capability.token}`
+        : null;
       await repository.createOrder({
         id: orderId,
         customerName: input.customer.fullName,
@@ -94,15 +102,22 @@ export function createEnterpriseCheckoutService(dependencies: EnterpriseCheckout
         amountMinor: input.amountMinor,
         currency: input.currency,
         paymentProvider: input.provider,
-        checkoutStatus: 'created',
+        checkoutStatus: capability ? 'awaiting_payment_selection' : 'created',
         paymentStatus: 'pending',
         idempotencyKey: context.idempotencyKey,
+        checkoutTokenHash: capability?.tokenHash ?? null,
+        checkoutTokenExpiresAt: capability?.expiresAt ?? null,
         metadata: {
           requestFingerprint,
+          ...(redirectUrl ? { redirectUrl, paymentFlow: 'deferred_nowpayments_invoice' } : {}),
           ...(context.mailEnterpriseOfferId ? { mailEnterpriseOfferId: context.mailEnterpriseOfferId } : {}),
           ...(context.mailEnterpriseTenantId ? { mailEnterpriseTenantId: context.mailEnterpriseTenantId } : {}),
         },
       });
+
+      if (capability && redirectUrl) {
+        return { orderId, provider: input.provider, redirectUrl, status: 'checkout_created' };
+      }
 
       try {
         if (context.onOrderCreated) await context.onOrderCreated(orderId);
@@ -139,6 +154,55 @@ export function createEnterpriseCheckoutService(dependencies: EnterpriseCheckout
           throw new Error('Enterprise checkout failed and requires operator review.');
         }
         throw new Error('Enterprise checkout is temporarily unavailable.');
+      }
+    },
+
+    async startNowPaymentsInvoice(input: { token: string; payCurrency: string }) {
+      const tokenHash = await hashEnterprisePaymentToken(input.token);
+      const order = await repository.findByCheckoutTokenHash(tokenHash);
+      if (!order || !isEnterprisePaymentCapabilityActive({ tokenHash: order.checkoutTokenHash, expiresAt: order.checkoutTokenExpiresAt })) {
+        throw new Error('Enterprise payment link is invalid or expired.');
+      }
+      if (order.paymentProvider !== 'nowpayments') throw new Error('Payment link is invalid.');
+
+      const savedInvoice = typeof order.metadata?.invoiceRedirectUrl === 'string' ? order.metadata.invoiceRedirectUrl : null;
+      if (savedInvoice) return { redirectUrl: savedInvoice, status: 'ready' as const };
+      if (order.checkoutStatus !== 'awaiting_payment_selection') {
+        throw new Error('Payment checkout is already being prepared or requires operator review.');
+      }
+
+      const payCurrency = input.payCurrency.trim().toUpperCase();
+      if (!/^[A-Z0-9]{2,24}$/.test(payCurrency)) throw new Error('Payment currency is invalid.');
+      const claimed = await repository.beginInvoiceCreation(order.id, payCurrency);
+      if (!claimed) throw new Error('Payment checkout is already being prepared or requires operator review.');
+
+      try {
+        const provider = getProvider('nowpayments');
+        const providerResult = await provider.createCheckout({
+          orderId: order.id,
+          customer: { fullName: order.customerName, companyName: order.companyName, email: order.email,
+            ...(order.phone ? { phone: order.phone } : {}), ...(order.country ? { country: order.country } : {}) },
+          project: { scopeId: order.scopeId ?? undefined, name: order.projectName,
+            ...(order.projectDescription ? { description: order.projectDescription } : {}) },
+          amountMinor: order.amountMinor,
+          currency: 'USD',
+          provider: 'nowpayments',
+          payCurrency,
+        });
+        await repository.updateCheckout({
+          orderId: order.id,
+          checkoutStatus: 'redirected',
+          providerCheckoutReference: providerResult.providerCheckoutReference,
+          metadata: { invoiceRedirectUrl: providerResult.redirectUrl, invoiceCreatedAt: new Date().toISOString() },
+        });
+        return { redirectUrl: providerResult.redirectUrl, status: 'ready' as const };
+      } catch {
+        await repository.updateCheckout({
+          orderId: order.id,
+          checkoutStatus: 'invoice_creation_unknown',
+          metadata: { invoiceCreationRequiresOperatorReview: true },
+        }).catch(() => undefined);
+        throw new Error('Payment checkout could not be confirmed. Contact Mkety support before retrying.');
       }
     },
   };

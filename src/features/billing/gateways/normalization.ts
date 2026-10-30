@@ -11,6 +11,7 @@ interface SettlementPayloadFields {
   amountPaidMinor: bigint;
   currencyPaid: string;
   occurredAt: Date;
+  providerPayCurrency?: string;
 }
 
 function requireRecord(payload: unknown): Record<string, unknown> {
@@ -62,6 +63,9 @@ export function parseVerifiedSettlementFields(event: VerifiedGatewayEvent): {
       amountPaidMinor: requireMinorUnits(payload, 'amountPaidMinor'),
       currencyPaid: requireString(payload, 'currencyPaid'),
       occurredAt,
+      ...(typeof payload.providerPayCurrency === 'string' && /^[A-Z0-9]{2,24}$/.test(payload.providerPayCurrency)
+        ? { providerPayCurrency: payload.providerPayCurrency }
+        : {}),
     },
   };
 }
@@ -84,5 +88,6 @@ export function toNormalizedSettlement(
     status: 'verified_success',
     occurredAt: fields.occurredAt,
     rawReference: event.rawReference,
+    ...(fields.providerPayCurrency ? { providerPayCurrency: fields.providerPayCurrency } : {}),
   };
 }

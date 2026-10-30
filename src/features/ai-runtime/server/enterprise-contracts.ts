@@ -461,6 +461,7 @@ export async function createEnterpriseAiContractCheckout(input: {
   cancelUrl: string;
   customer?: { email: string; name?: string };
   collectionCurrency?: string;
+  payCurrency?: string;
   fundingAmountMinor?: bigint;
   now?: Date;
 }) {
@@ -682,6 +683,7 @@ export async function createEnterpriseAiContractCheckout(input: {
       returnUrl: input.returnUrl,
       cancelUrl: input.cancelUrl,
       collectionCurrency: input.collectionCurrency,
+      payCurrency: input.payCurrency,
       customer: input.customer,
     });
 

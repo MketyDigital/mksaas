@@ -2,6 +2,7 @@ import type { EnterpriseCheckoutRequest, EnterprisePaymentProvider } from '../do
 
 export interface ProviderCheckoutInput extends EnterpriseCheckoutRequest {
   orderId: string;
+  payCurrency?: string;
 }
 
 export interface ProviderCheckoutResult {

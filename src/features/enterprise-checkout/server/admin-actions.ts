@@ -55,7 +55,10 @@ export async function createEnterprisePaymentLink(
       currency: 'USD',
       provider: input.provider,
     },
-    { idempotencyKey: `admin-${crypto.randomUUID()}` },
+    {
+      idempotencyKey: `admin-${crypto.randomUUID()}`,
+      deferNowPaymentsInvoice: input.provider === 'nowpayments',
+    },
   );
 
   revalidatePath(`/ops/${tenantSlug}/platform-control/enterprise-payments`);

@@ -52,6 +52,7 @@ next-env.d.ts
 
 # git worktrees
 .worktrees/
+.superpowers/sdd/
 /dist/
 .vinext/
 .wrangler/

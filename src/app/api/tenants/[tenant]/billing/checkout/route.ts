@@ -49,8 +49,8 @@ export async function POST(request: Request, context: RouteContext) {
 
   const contentType = request.headers.get('content-type') ?? '';
   const body = contentType.includes('application/json')
-    ? ((await request.json().catch(() => ({}))) as { planKey?: string; termKey?: string; provider?: string; collectionCurrency?: string })
-    : (Object.fromEntries(await request.formData()) as { planKey?: string; termKey?: string; provider?: string; collectionCurrency?: string });
+    ? ((await request.json().catch(() => ({}))) as { planKey?: string; termKey?: string; provider?: string; collectionCurrency?: string; payCurrency?: string })
+    : (Object.fromEntries(await request.formData()) as { planKey?: string; termKey?: string; provider?: string; collectionCurrency?: string; payCurrency?: string });
 
   const planKey = String(body.planKey ?? '');
   const termKey = String(body.termKey ?? '1m');
@@ -138,6 +138,7 @@ export async function POST(request: Request, context: RouteContext) {
           ? { email: session.user.email, name: session.user.name ?? undefined }
           : undefined,
         collectionCurrency: provider === 'flutterwave' ? collectionCurrency : undefined,
+        payCurrency: provider === 'nowpayments' ? body.payCurrency : undefined,
       },
     );
 

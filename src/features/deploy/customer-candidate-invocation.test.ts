@@ -29,7 +29,8 @@ describe('APP-07 customer candidate invocation boundary', () => {
 
     expect(panel).toContain('Request non-production candidate');
     expect(panel).toContain('isolated workers.dev proof execution');
-    expect(panel).toContain('Production, DNS and custom domains stay blocked');
+    expect(panel).toContain('Request production alias promotion');
+    expect(panel).toContain('DNS and custom domains are not changed');
     expect(panel).toContain('Execute approved candidate');
     expect(panel).not.toContain('Deploy to production');
     expect(panel).not.toContain('Create custom domain');

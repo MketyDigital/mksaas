@@ -5,6 +5,10 @@ import {
   parseMketyBillingOrderId,
 } from './nowpayments';
 
+function response(body: unknown, status = 200): Response {
+  return { ok: status >= 200 && status < 300, status, json: async () => body } as Response;
+}
+
 const basePayload = {
   verified: true,
   eventId: 'evt-now-1',
@@ -65,7 +69,54 @@ describe('NOWPayments Billing adapter', () => {
       ipn_callback_url: 'https://mkety.example/api/webhooks/billing/nowpayments',
       success_url: 'https://mkety.example/return',
       cancel_url: 'https://mkety.example/cancel',
+      is_fixed_rate: true,
+      is_fee_paid_by_user: true,
     });
+  });
+
+  it('revalidates the selected network before creating an invoice', async () => {
+    const fetchImpl = jest.fn()
+      .mockResolvedValueOnce(response({ currencies: ['USDTTON', 'USDTTRC20'] }))
+      .mockResolvedValueOnce(response({ id: 'invoice-1', invoice_url: 'https://nowpayments.io/i/1' }));
+    const adapter = createNowPaymentsBillingAdapter({ apiKey: 'test-api-key', fetchImpl });
+
+    await adapter.createCheckout({
+      checkoutId: '6fdd16e0-b8a3-4f8d-9f74-3d9157320189',
+      tenantId: 'tenant-1',
+      subscriptionId: 'subscription-1',
+      billingPeriodId: 'period-1',
+      amountExpectedMinor: 1699n,
+      currency: 'USD',
+      returnUrl: 'https://mkety.example/return',
+      cancelUrl: 'https://mkety.example/cancel',
+      payCurrency: 'USDTTON',
+    });
+
+    expect(fetchImpl).toHaveBeenNthCalledWith(1, 'https://api.nowpayments.io/v1/currencies', expect.any(Object));
+    expect(JSON.parse(fetchImpl.mock.calls[1]![1].body)).toMatchObject({
+      pay_currency: 'USDTTON',
+      is_fixed_rate: true,
+      is_fee_paid_by_user: true,
+      price_amount: 16.99,
+      price_currency: 'usd',
+    });
+  });
+
+  it('rejects a stale selected network before invoice creation', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(response({ currencies: ['USDTTON'] }));
+    const adapter = createNowPaymentsBillingAdapter({ apiKey: 'test-api-key', fetchImpl });
+    await expect(adapter.createCheckout({
+      checkoutId: '6fdd16e0-b8a3-4f8d-9f74-3d9157320189',
+      tenantId: 'tenant-1',
+      subscriptionId: 'subscription-1',
+      billingPeriodId: 'period-1',
+      amountExpectedMinor: 1699n,
+      currency: 'USD',
+      returnUrl: 'https://mkety.example/return',
+      cancelUrl: 'https://mkety.example/cancel',
+      payCurrency: 'USDTTRC20',
+    })).rejects.toThrow(/no longer available/);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it('parses canonical and legacy Mkety Billing checkout order identifiers', () => {
@@ -93,6 +144,7 @@ describe('NOWPayments Billing adapter', () => {
           providerPayload: {
             price_amount: 16.99,
             price_currency: 'usd',
+            pay_currency: 'USDTTON',
           },
         },
       },
@@ -101,6 +153,7 @@ describe('NOWPayments Billing adapter', () => {
         billingPeriodId: 'period-1',
         amountExpectedMinor: 1699n,
         currency: 'USD',
+        providerPayCurrency: 'USDTTON',
       },
       new Date('2026-09-18T12:00:00.000Z'),
     );
@@ -113,6 +166,7 @@ describe('NOWPayments Billing adapter', () => {
       amountPaidMinor: 1699n,
       currencyExpected: 'USD',
       currencyPaid: 'USD',
+      providerPayCurrency: 'USDTTON',
       status: 'verified_success',
     });
   });
@@ -142,6 +196,24 @@ describe('NOWPayments Billing adapter', () => {
       ),
     ).toThrow('amount does not match');
   });
+
+  it('rejects a final payment in a different canonical currency', () => {
+    expect(() => buildNowPaymentsSettlementForCheckout({
+      provider: 'nowpayments',
+      payload: { verified: true, eventId: 'evt-1', paymentId: 'pay-1', paymentStatus: 'finished',
+        providerPayload: { price_amount: 16.99, price_currency: 'eur', pay_currency: 'USDTTON' } },
+    }, { subscriptionId: 'subscription-1', billingPeriodId: 'period-1', amountExpectedMinor: 1699n,
+      currency: 'USD', providerPayCurrency: 'USDTTON' })).toThrow(/currency does not match/);
+  });
+
+  it('rejects a final payment on a different network than the one selected for checkout', () => {
+    expect(() => buildNowPaymentsSettlementForCheckout({
+      provider: 'nowpayments',
+      payload: { verified: true, eventId: 'evt-1', paymentId: 'pay-1', paymentStatus: 'finished',
+        providerPayload: { price_amount: 16.99, price_currency: 'usd', pay_currency: 'USDTTRC20' } },
+    }, { subscriptionId: 'subscription-1', billingPeriodId: 'period-1', amountExpectedMinor: 1699n,
+      currency: 'USD', providerPayCurrency: 'USDTTON' })).toThrow(/network does not match/);
+  });
 });
 
 describe('normalizeNowPaymentsSettlement', () => {
@@ -156,7 +228,7 @@ describe('normalizeNowPaymentsSettlement', () => {
     });
   });
 
-  it.each(['confirmed', 'sending', 'partially_paid', 'waiting', 'unknown'])('rejects non-final status %s', (paymentStatus) => {
+  it.each(['confirmed', 'confirming', 'sending', 'partially_paid', 'waiting', 'failed', 'expired', 'unknown'])('rejects non-final status %s', (paymentStatus) => {
     expect(() => normalizeNowPaymentsSettlement({
       provider: 'nowpayments',
       payload: { ...basePayload, paymentStatus },

@@ -10,6 +10,9 @@ const runtimeConnectionCloudflarePath = fileURLToPath(
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  experimental: {
+    serverActions: { bodySizeLimit: '2mb' },
+  },
   // Exclude pdf-parse from bundling to avoid issues with worker threads
   serverExternalPackages: ['pdf-parse'],
   webpack(config) {

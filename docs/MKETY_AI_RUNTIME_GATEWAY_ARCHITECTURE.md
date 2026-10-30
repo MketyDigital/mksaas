@@ -1,5 +1,17 @@
 # Mkety AI Runtime, Gateway & Enterprise AI Architecture
 
+## 2026-10-23 shared provider catalog and surface isolation clarification
+
+The central provider/model catalog, encrypted Mkety provider connections, and Workers AI binding are shared platform capabilities. Public AI and authenticated Workspace AI use those same central connections and Workers AI installation; they do not have separate copies of provider credentials or separate Workers AI bindings. Their routing, enablement, budgets, memory/data access, and failure behavior remain independently controlled per surface. Enterprise AI enablement and customer-inference gates apply only to Enterprise AI and must not gate Public or Workspace inference.
+
+Assist is a separate production application with its own runtime, controls, customer data, and payment/usage ledger. It may consume the same versioned provider/model catalog contract, but it must not import Mkety Platform's runtime credentials, request database, customer data, or ledgers.
+
+The current Platform code contract is `src/shared/ai/provider-model-catalog.ts`; Platform Public AI derives its approved model registry from that module. Assist source and production controls were not changed in this workstream. Any future Assist integration must be separately authorized and released through Assist's own production process, and may consume only the pure catalog definitions without importing Platform credentials or runtime/data code.
+
+Public AI provider connections use `mode = 'platform'`, matching Workspace's central connection lookup. The one-time additive migration `0044_public_ai_provider_connections` promotes legacy Public-only system connections to `platform`, preserving the existing platform row if both exist. It does not touch tenant/project BYOK rows. Public route validation checks only the selected primary and fallback providers; unsupported inactive legacy model values normalize to that provider's current default, while unsupported active selections remain explicit errors. Azure Foundry project endpoints retain `/api/projects/<project>` when the Responses API path is appended.
+
+Admin mutation failures display an opaque UUID reference and emit the same reference in a sanitized structured log prefix. This enables diagnosis without placing provider secrets, SQL details, or raw exception messages in the URL or UI.
+
 ## 2026-09-28 central AI runtime and dynamic-configuration authority
 
 This section supersedes earlier statements below that describe Workspace AI, Enterprise BYOK, provider selection, or registrar integration as still separate/unimplemented.

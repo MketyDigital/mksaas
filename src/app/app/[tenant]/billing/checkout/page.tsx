@@ -11,6 +11,7 @@ import {
 import { getActiveSelfServiceBillingQuote } from '@/features/billing/server/active-catalog';
 import { hasEntitlement } from '@/features/entitlements/server/resolver';
 import { getMketyFlutterwaveMethodLabelsForCurrency } from '@/features/payments/flutterwave-payment-methods';
+import { defaultNowPaymentsCurrency, fetchNowPaymentsCurrencies } from '@/features/payments/nowpayments-currencies';
 import { isMketyFlutterwaveCollectionCurrency, quoteFlutterwaveCollection } from '@/features/payments/flutterwave-standard';
 import {
   getAvailableMketyPaymentProviders,
@@ -24,7 +25,7 @@ import { getTenantBySlug } from '@/shared/lib/tenant';
 
 interface PageProps {
   params: Promise<{ tenant: string }>;
-  searchParams: Promise<{ plan?: string; term?: string; payment?: string; currency?: string }>;
+  searchParams: Promise<{ plan?: string; term?: string; payment?: string; currency?: string; payCurrency?: string }>;
 }
 
 export const metadata = {
@@ -108,6 +109,17 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
     },
     kora: { publicKey: process.env.KORA_PUBLIC_KEY, secretKey: process.env.KORA_SECRET_KEY },
   });
+  let nowPaymentsCurrencies: string[] = [];
+  if (process.env.NOWPAYMENTS_API_KEY) {
+    try {
+      nowPaymentsCurrencies = await fetchNowPaymentsCurrencies({ apiKey: process.env.NOWPAYMENTS_API_KEY });
+    } catch {
+      // Checkout remains available; NOWPayments can show its hosted currency chooser.
+    }
+  }
+  const selectedPayCurrency = nowPaymentsCurrencies.includes(String(query.payCurrency ?? '').toUpperCase())
+    ? String(query.payCurrency).toUpperCase()
+    : defaultNowPaymentsCurrency(nowPaymentsCurrencies);
 
   return (
     <main className="min-h-screen bg-muted/20 px-4 py-12">
@@ -216,6 +228,30 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
                 </div>
               ) : null}
 
+              {paymentProviders.some((provider) => provider.provider === 'nowpayments') ? (
+                <div className="rounded-2xl border bg-muted/30 p-4">
+                  <p className="text-sm font-medium">NOWPayments cryptocurrency and network</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Your subscription price stays in USD. NOWPayments locks the live crypto quote for the invoice and shows the final amount and customer-paid network fees before payment confirmation.
+                  </p>
+                  {nowPaymentsCurrencies.length ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {nowPaymentsCurrencies.map((currency) => (
+                        <Link
+                          key={currency}
+                          href={`/app/${tenantSlug}/billing/checkout?plan=${encodeURIComponent(plan.key)}&term=${termKey}&payCurrency=${currency}`}
+                          className={currency === selectedPayCurrency ? 'rounded-lg border border-primary bg-primary/5 px-3 py-2 text-xs font-semibold' : 'rounded-lg border px-3 py-2 text-xs hover:border-primary/50'}
+                        >
+                          {currency}
+                        </Link>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-muted-foreground">Live network choices are temporarily unavailable; NOWPayments will show its current options in hosted checkout.</p>
+                  )}
+                </div>
+              ) : null}
+
               {paymentProviders.length ? paymentProviders.map((provider, index) => (
                 <form key={provider.provider} action={`/api/tenants/${tenantSlug}/billing/checkout`} method="post">
                   <input type="hidden" name="planKey" value={plan.key} />
@@ -223,6 +259,9 @@ export default async function BillingCheckoutPage({ params, searchParams }: Page
                   <input type="hidden" name="provider" value={provider.provider} />
                   {provider.provider === 'flutterwave' ? (
                     <input type="hidden" name="collectionCurrency" value={selectedCurrency} />
+                  ) : null}
+                  {provider.provider === 'nowpayments' && selectedPayCurrency ? (
+                    <input type="hidden" name="payCurrency" value={selectedPayCurrency} />
                   ) : null}
                   <button
                     type="submit"

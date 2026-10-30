@@ -42,4 +42,14 @@ describe('NOWPayments enterprise adapter', () => {
     await expect(adapter.createCheckout(input)).rejects.toThrow('NOWPayments is not configured');
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('revalidates and fixes the selected ticker server-side before creating the negotiated USD invoice', async () => {
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ currencies: ['BTC', 'USDTTRC20'] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'invoice-2', invoice_url: 'https://nowpayments.io/invoice/2' }) });
+    const adapter = createNowPaymentsAdapter({ apiKey: 'secret', fetchImpl: fetchMock });
+    await adapter.createCheckout({ ...input, payCurrency: 'usdttrc20' });
+    const body = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(body).toMatchObject({ price_amount: 199.99, price_currency: 'usd', pay_currency: 'USDTTRC20', is_fixed_rate: true, is_fee_paid_by_user: true });
+  });
 });

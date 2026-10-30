@@ -5,10 +5,11 @@ import { requireProjectAccess } from '@/features/projects/server/access';
 import { DeployWorkspaceOverview } from '@/features/projects/workspaces/DeployWorkspaceOverview';
 import { getProjectWorkspaceByKey } from '@/features/projects/workspaces/registry';
 import { WorkspaceShell } from '@/features/projects/workspaces/WorkspaceShell';
+import { normalizeMketyAppHostname } from '@/features/deploy/hostnames';
 
 export const dynamic = 'force-dynamic';
 
-export default async function DeployWorkspacePage({ params, searchParams }: { params: Promise<{ tenant: string; project: string }>; searchParams: Promise<{ candidate?: string }> }) {
+export default async function DeployWorkspacePage({ params, searchParams }: { params: Promise<{ tenant: string; project: string }>; searchParams: Promise<{ candidate?: string; preview?: string; promotion?: string; host?: string }> }) {
   const { project: projectSlug, tenant: tenantSlug } = await params;
   const access = await requireProjectAccess({ projectSlug, tenantSlug });
 
@@ -33,6 +34,9 @@ export default async function DeployWorkspacePage({ params, searchParams }: { pa
           canManage={access.canManage}
           canDeployCandidate={canDeployCandidate}
           candidateOutcome={query.candidate === 'completed' || query.candidate === 'failed' ? query.candidate : undefined}
+          previewOutcome={query.preview === 'completed' || query.preview === 'failed' ? query.preview : undefined}
+          previewHostname={query.preview === 'completed' ? normalizeMketyAppHostname(query.host ?? '') : null}
+          promotionOutcome={query.promotion === 'requested' || query.promotion === 'completed' ? query.promotion : undefined}
           projectSlug={access.project.slug}
           state={deployState}
           tenantSlug={access.tenant.slug}

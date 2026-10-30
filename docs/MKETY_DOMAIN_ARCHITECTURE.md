@@ -36,7 +36,7 @@ Infrastructure-only origin/routing hostname. It must not be used as a product UR
 
 Customer-facing deployed applications, preview environments, generated sites, portals, APIs, and production app hostnames created through the Deploy workspace.
 
-The apex `mkety.app` is reserved for a small public "Mkety Apps" trust/namespace landing. It must explain that `*.mkety.app` hosts customer applications and previews, and link visitors back to `https://mkety.com` and `https://app.mkety.com`. It must not become the Mkety customer dashboard and must not expose deployment internals. Until Deploy hostname routing is promoted, `https://mkety.com/infrastructure` is the canonical public explanation of this namespace.
+The apex `mkety.app` is the branded Mkety Apps entry point for the customer hosting service. It must explain that `*.mkety.app` hosts customer applications and previews, and link visitors to `https://mkety.com` and `https://app.mkety.com`. It must not become the authenticated Platform dashboard and must not expose deployment internals. The customer dispatch implementation and live hostname routing are separate readiness gates recorded in `docs/CURRENT_WORKSTREAM_STATUS.md`.
 
 ## Implementation boundaries
 

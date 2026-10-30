@@ -22,6 +22,7 @@ export const billingSettlements = appSchema.table(
     currencyPaid: varchar('currency_paid', { length: 3 }).notNull(),
     providerAmountPaidMinor: bigint('provider_amount_paid_minor', { mode: 'bigint' }),
     providerCurrencyPaid: varchar('provider_currency_paid', { length: 3 }),
+    providerPayCurrency: varchar('provider_pay_currency', { length: 24 }),
     status: varchar('status', { length: 24 }).notNull().default('received'),
     rawReference: text('raw_reference'),
     occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),

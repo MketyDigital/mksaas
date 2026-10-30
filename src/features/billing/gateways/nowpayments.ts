@@ -1,5 +1,6 @@
 import { verifyNowPaymentsWebhook } from '@/features/enterprise-checkout/providers/nowpayments-webhook';
 import { createMketyPaymentReference, parseMketyPaymentReference } from '@/features/payments/reference';
+import { fetchNowPaymentsCurrencies } from '@/features/payments/nowpayments-currencies';
 
 import { parseVerifiedSettlementFields, toNormalizedSettlement } from './normalization';
 import { NOWPAYMENTS_CAPABILITIES } from './nowpayments-capabilities';
@@ -62,6 +63,14 @@ export function createNowPaymentsBillingAdapter(
       if (!options.apiKey) throw new Error('NOWPayments is not configured.');
       if (input.currency !== 'USD') throw new Error('NOWPayments self-service checkout currently requires USD.');
 
+      const selectedCurrency = input.payCurrency?.trim().toUpperCase();
+      if (selectedCurrency) {
+        const activeCurrencies = await fetchNowPaymentsCurrencies({ apiKey: options.apiKey, fetchImpl });
+        if (!activeCurrencies.includes(selectedCurrency)) {
+          throw new Error('Selected NOWPayments currency is no longer available.');
+        }
+      }
+
       const orderReference = createMketyPaymentReference('saas', input.checkoutId);
       const response = await fetchImpl(NOWPAYMENTS_INVOICE_ENDPOINT, {
         method: 'POST',
@@ -72,6 +81,9 @@ export function createNowPaymentsBillingAdapter(
         body: JSON.stringify({
           price_amount: minorUnitsToUsd(input.amountExpectedMinor),
           price_currency: 'usd',
+          ...(selectedCurrency ? { pay_currency: selectedCurrency } : {}),
+          is_fixed_rate: true,
+          is_fee_paid_by_user: true,
           order_id: orderReference,
           order_description: 'Mkety billing',
           ipn_callback_url: options.webhookUrl ?? MKETY_BILLING_WEBHOOK_URL,
@@ -110,6 +122,7 @@ export function createNowPaymentsBillingAdapter(
       return {
         provider: 'nowpayments',
         providerCheckoutId: invoiceId,
+        providerPayCurrency: selectedCurrency,
         checkoutUrl: `${checkoutOrigin}/payment/nowpayments?iid=${encodeURIComponent(invoiceId)}`,
       };
     },
@@ -148,6 +161,7 @@ export function buildNowPaymentsSettlementForCheckout(
     billingPeriodId: string;
     amountExpectedMinor: bigint;
     currency: string;
+    providerPayCurrency?: string | null;
   },
   occurredAt: Date = new Date(),
 ): NormalizedSettlement {
@@ -166,6 +180,11 @@ export function buildNowPaymentsSettlementForCheckout(
   }
 
   const raw = providerPayload as Record<string, unknown>;
+  const observedPayCurrency = String(raw.pay_currency ?? raw.actually_paid_currency ?? '').trim().toUpperCase();
+  const expectedPayCurrency = context.providerPayCurrency?.trim().toUpperCase();
+  if (expectedPayCurrency && observedPayCurrency && observedPayCurrency !== expectedPayCurrency) {
+    throw new Error('NOWPayments settlement payment network does not match the selected checkout network.');
+  }
   const currency = String(raw.price_currency ?? '').toUpperCase();
   const amountPaidMinor = usdValueToMinorUnits(raw.price_amount);
 
@@ -189,6 +208,7 @@ export function buildNowPaymentsSettlementForCheckout(
       currencyExpected: context.currency,
       amountPaidMinor: amountPaidMinor.toString(),
       currencyPaid: currency,
+      ...(observedPayCurrency ? { providerPayCurrency: observedPayCurrency } : expectedPayCurrency ? { providerPayCurrency: expectedPayCurrency } : {}),
       occurredAt: occurredAt.toISOString(),
     },
   };

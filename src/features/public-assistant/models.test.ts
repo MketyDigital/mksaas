@@ -1,4 +1,9 @@
-import { assertCurrentPublicAIModel, getPublicAIModelDefinition, PUBLIC_AI_MODEL_REGISTRY } from './models';
+import {
+  assertCurrentPublicAIModel,
+  getPublicAIModelDefinition,
+  normalizePublicAIModelSelections,
+  PUBLIC_AI_MODEL_REGISTRY,
+} from './models';
 
 describe('Public Mkety AI September 2026 model registry', () => {
   it('registers every supported public provider with a current production model', () => {
@@ -19,6 +24,7 @@ describe('Public Mkety AI September 2026 model registry', () => {
     expect(getPublicAIModelDefinition('cloudflare-ai', '@cf/qwen/qwen3.8-27b')?.status).toBe('current-stable');
     expect(getPublicAIModelDefinition('bedrock', 'global.anthropic.claude-sonnet-5')?.status).toBe('current-stable');
     expect(getPublicAIModelDefinition('azure-openai', 'gpt-5.6-terra')?.status).toBe('current-stable');
+    expect(getPublicAIModelDefinition('azure-openai', 'gpt-6-luna-1')?.status).toBe('current-stable');
   });
 
   it('defaults OpenAI public support to an approved model accessible to the staging project', () => {
@@ -39,5 +45,22 @@ describe('Public Mkety AI September 2026 model registry', () => {
     ['vertex', 'gemini-2.0-flash'],
   ] as const)('rejects legacy/unapproved public model %s:%s', (provider, model) => {
     expect(() => assertCurrentPublicAIModel(provider, model)).toThrow(/not an approved current/);
+  });
+
+  it('normalizes stale models for inactive providers without blocking a valid route', () => {
+    expect(normalizePublicAIModelSelections(
+      { 'azure-openai': 'gpt-4o-mini', 'workers-ai': '@cf/google/gemma-4-26b-a4b-it' },
+      ['workers-ai'],
+    )).toMatchObject({
+      'azure-openai': PUBLIC_AI_MODEL_REGISTRY['azure-openai'].defaultModel,
+      'workers-ai': '@cf/google/gemma-4-26b-a4b-it',
+    });
+  });
+
+  it('rejects an unsupported model when its provider is active', () => {
+    expect(() => normalizePublicAIModelSelections(
+      { 'azure-openai': 'gpt-4o-mini' },
+      ['azure-openai'],
+    )).toThrow(/not an approved current/);
   });
 });

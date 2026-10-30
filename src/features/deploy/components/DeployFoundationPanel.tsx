@@ -1,8 +1,12 @@
 import {
+  createCustomerDeploymentRequest,
   createDeployApplication,
   createDeployEnvironment,
   createDeploymentRequest,
+  createProductionPromotionRequest,
+  executeApprovedCustomerDeploymentRequest,
   executeApprovedDeploymentRequest,
+  executeApprovedProductionPromotionRequest,
 } from '@/features/deploy/actions';
 import type { DeployFoundationState } from '@/features/deploy/server/queries';
 
@@ -10,6 +14,9 @@ interface DeployFoundationPanelProps {
   canManage: boolean;
   canDeployCandidate: boolean;
   candidateOutcome?: 'completed' | 'failed';
+  previewOutcome?: 'completed' | 'failed';
+  previewHostname?: string | null;
+  promotionOutcome?: 'requested' | 'completed';
   projectSlug: string;
   state: DeployFoundationState;
   tenantSlug: string;
@@ -19,12 +26,17 @@ export function DeployFoundationPanel({
   canManage,
   canDeployCandidate,
   candidateOutcome,
+  previewOutcome,
+  previewHostname,
+  promotionOutcome,
   projectSlug,
   state,
   tenantSlug,
 }: DeployFoundationPanelProps) {
   const applicationNameById = new Map(state.applications.map((application) => [application.id, application.name]));
   const environmentNameById = new Map(state.environments.map((environment) => [environment.id, environment.name]));
+  const previewDeploymentIds = new Set(state.activeHostnames.filter((item) => item.kind === 'preview').map((item) => item.deploymentId));
+  const productionDeploymentIds = new Set(state.activeHostnames.filter((item) => item.kind === 'production').map((item) => item.deploymentId));
   const requestableEnvironments = state.environments.filter(
     (environment) => !environment.protected && environment.kind !== 'production',
   );
@@ -96,6 +108,26 @@ export function DeployFoundationPanel({
         </div>
       ) : null}
 
+      {previewOutcome ? (
+        <div className="rounded-2xl border bg-card p-4 text-sm" role="status">
+          {previewOutcome === 'completed' && previewHostname ? (
+            <>Customer preview deployed: <a className="font-medium text-primary underline" href={`https://${previewHostname}`} target="_blank" rel="noreferrer">https://{previewHostname}</a></>
+          ) : previewOutcome === 'completed' ? (
+            'Customer preview deployed, but the active preview hostname was not returned. Refresh the deployment history.'
+          ) : (
+            'Customer preview deployment failed. The production environment was not changed.'
+          )}
+        </div>
+      ) : null}
+
+      {promotionOutcome ? (
+        <div className="rounded-2xl border bg-card p-4 text-sm" role="status">
+          {promotionOutcome === 'requested'
+            ? 'Production alias promotion requested. Platform Control must approve it before the stable app hostname changes.'
+            : 'Production app hostname now resolves to the approved completed preview. The previous deployment remains available for rollback through another approved promotion.'}
+        </div>
+      ) : null}
+
       {canManage ? (
         <section className="rounded-2xl border bg-card p-5" aria-labelledby="candidate-request-heading">
           <div>
@@ -133,7 +165,7 @@ export function DeployFoundationPanel({
                 disabled={requestableEnvironments.length === 0}
                 type="submit"
               >
-                Request approval
+                Request preview deployment
               </button>
             </form>
           ) : (
@@ -141,6 +173,35 @@ export function DeployFoundationPanel({
               Candidate requests require Deploy Workspace access and project manager permissions.
             </p>
           )}
+        </section>
+      ) : null}
+
+      {canDeployCandidate ? (
+        <section className="rounded-2xl border bg-card p-5" aria-labelledby="customer-preview-heading">
+          <div>
+            <h3 className="font-semibold" id="customer-preview-heading">Request a customer app preview</h3>
+            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+              Upload a JSON module manifest (up to 1.1 MiB). After Platform Control approves it, Mkety deploys the exact bundle into the isolated Workers for Platforms namespace and activates a preview hostname.
+            </p>
+          </div>
+          <form action={createCustomerDeploymentRequest} encType="multipart/form-data" className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_1fr_1fr_auto]">
+            <input name="tenantSlug" type="hidden" value={tenantSlug} />
+            <input name="projectSlug" type="hidden" value={projectSlug} />
+            <select className="rounded-md border bg-background px-3 py-2 text-sm" name="environmentId" required>
+              <option value="">Choose non-production environment</option>
+              {requestableEnvironments.map((environment) => (
+                <option key={environment.id} value={environment.id}>
+                  {applicationNameById.get(environment.applicationId) ?? 'Application'} · {environment.name}
+                </option>
+              ))}
+            </select>
+            <input className="rounded-md border bg-background px-3 py-2 text-sm" name="releaseRef" placeholder="Release reference" required />
+            <input className="rounded-md border bg-background px-3 py-2 text-sm" name="sourceRef" placeholder="Source reference (optional)" />
+            <input className="rounded-md border bg-background px-3 py-2 text-sm" name="artifactBundle" type="file" accept="application/json,.json" required />
+            <button className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50" disabled={!requestableEnvironments.length} type="submit">
+              Request app preview
+            </button>
+          </form>
         </section>
       ) : null}
 
@@ -183,8 +244,8 @@ export function DeployFoundationPanel({
       <section className="rounded-2xl border bg-card p-5" aria-labelledby="deployment-requests-heading">
         <div>
           <h3 className="font-semibold" id="deployment-requests-heading">Deployment requests</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Approved requests can be executed once by a project manager while Deploy entitlement remains active. Production, DNS and custom domains stay blocked.
+            <p className="mt-1 text-sm text-muted-foreground">
+              Approved preview requests execute once. Approved production alias requests only switch the stable app hostname to an existing completed customer deployment; DNS and custom domains are not changed.
           </p>
         </div>
         <div className="mt-4 space-y-3">
@@ -195,12 +256,14 @@ export function DeployFoundationPanel({
               <span className="capitalize">{request.status}</span>
               <span className="text-muted-foreground">{request.releaseRef}</span>
               {canDeployCandidate && request.status === 'approved' && !request.executionDeploymentId ? (
-                <form action={executeApprovedDeploymentRequest}>
+                <form action={request.promotionDeploymentId
+                  ? executeApprovedProductionPromotionRequest
+                  : request.artifactKey ? executeApprovedCustomerDeploymentRequest : executeApprovedDeploymentRequest}>
                   <input name="tenantSlug" type="hidden" value={tenantSlug} />
                   <input name="projectSlug" type="hidden" value={projectSlug} />
                   <input name="requestId" type="hidden" value={request.id} />
                   <button className="rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground" type="submit">
-                    Execute approved candidate
+                    {request.promotionDeploymentId ? 'Apply approved promotion' : request.artifactKey ? 'Deploy customer preview' : 'Execute approved candidate'}
                   </button>
                 </form>
               ) : <span className="text-xs text-muted-foreground">{request.executionDeploymentId ? 'Execution linked' : 'Awaiting action'}</span>}
@@ -213,16 +276,34 @@ export function DeployFoundationPanel({
         <div>
           <h3 className="font-semibold" id="deployment-history-heading">Deployment history</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Audited candidate release history. Customer execution is limited to approved non-production isolated workers.dev candidates.
+            Completed customer previews stay available. A protected production app hostname can be promoted through Platform Control approval, and rollback uses the same flow.
           </p>
         </div>
         <div className="mt-4 space-y-3">
           {state.deploymentHistory.length ? state.deploymentHistory.map((deployment) => (
-            <div className="grid gap-2 rounded-xl border bg-background p-3 text-sm md:grid-cols-4" key={deployment.id}>
+            <div className="grid gap-2 rounded-xl border bg-background p-3 text-sm md:grid-cols-5" key={deployment.id}>
               <span>{applicationNameById.get(deployment.applicationId) ?? 'Application'}</span>
               <span>{environmentNameById.get(deployment.environmentId) ?? 'Environment'}</span>
               <span className="capitalize">{deployment.status}</span>
               <span className="text-muted-foreground">{deployment.releaseRef ?? 'No release reference'}</span>
+              <div className="space-y-2">
+                {state.activeHostnames.filter((hostname) => hostname.deploymentId === deployment.id).map((hostname) => (
+                  <a className="block text-primary underline" href={`https://${hostname.hostname}`} key={hostname.kind} target="_blank" rel="noreferrer">
+                    Open {hostname.kind === 'production' ? 'production app' : 'preview'}
+                  </a>
+                ))}
+                {canDeployCandidate && deployment.status === 'completed' &&
+                      previewDeploymentIds.has(deployment.id) &&
+                  state.environments.some((environment) => environment.applicationId === deployment.applicationId && environment.kind === 'production' && environment.protected) &&
+                  !productionDeploymentIds.has(deployment.id) ? (
+                    <form action={createProductionPromotionRequest}>
+                      <input name="tenantSlug" type="hidden" value={tenantSlug} />
+                      <input name="projectSlug" type="hidden" value={projectSlug} />
+                      <input name="deploymentId" type="hidden" value={deployment.id} />
+                      <button className="rounded-md border px-3 py-2 text-xs font-medium" type="submit">Request production alias promotion</button>
+                    </form>
+                  ) : null}
+              </div>
             </div>
           )) : <p className="text-sm text-muted-foreground">No deployment runs have been recorded.</p>}
         </div>

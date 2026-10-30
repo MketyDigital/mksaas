@@ -61,6 +61,7 @@ function createSettlementTransaction(tx: DrizzleBillingTransaction): BillingSett
           currencyPaid: input.currencyPaid,
           providerAmountPaidMinor: input.providerAmountPaidMinor ?? null,
           providerCurrencyPaid: input.providerCurrencyPaid ?? null,
+          providerPayCurrency: input.providerPayCurrency ?? null,
           status: 'verified',
           rawReference: input.rawReference ?? null,
           occurredAt: input.occurredAt,

@@ -12,7 +12,7 @@ export function DeploymentApprovalQueue({ rows, tenantSlug }: DeploymentApproval
       <div>
         <h2 className="text-lg font-semibold">Pending deployment approvals</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Review the exact non-production environment and release/source references. Approval authorizes one later customer execution; it does not execute the provider.
+          Review the requested change. Preview approvals authorize one isolated customer execution; production alias approvals move the stable app hostname to an already completed preview.
         </p>
       </div>
 
@@ -45,6 +45,7 @@ export function DeploymentApprovalQueue({ rows, tenantSlug }: DeploymentApproval
               <div className="mt-3 grid gap-2 text-xs text-muted-foreground md:grid-cols-2">
                 <p>Release: {row.releaseRef}</p>
                 <p>Source: {row.sourceRef ?? 'not supplied'}</p>
+                {row.promotionDeploymentId ? <p className="md:col-span-2">Production alias promotion · completed preview {row.promotionDeploymentId}</p> : null}
               </div>
 
               <form action={reviewDeploymentRequest} className="mt-4 space-y-3">
@@ -63,7 +64,7 @@ export function DeploymentApprovalQueue({ rows, tenantSlug }: DeploymentApproval
                     type="submit"
                     value="approved"
                   >
-                    Approve one execution
+                    {row.promotionDeploymentId ? 'Approve alias promotion' : 'Approve one execution'}
                   </button>
                   <button
                     className="rounded-md border px-4 py-2 text-sm font-medium"

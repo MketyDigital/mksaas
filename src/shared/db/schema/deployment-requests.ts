@@ -17,9 +17,12 @@ export const deploymentRequests = appSchema.table(
     requestedByUserId: text('requested_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     reviewedByUserId: text('reviewed_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     executionDeploymentId: uuid('execution_deployment_id').references(() => deployments.id, { onDelete: 'set null' }),
+    promotionDeploymentId: uuid('promotion_deployment_id').references(() => deployments.id, { onDelete: 'set null' }),
     status: varchar('status', { length: 32 }).notNull().default('pending'),
     releaseRef: text('release_ref').notNull(),
     sourceRef: text('source_ref'),
+    artifactKey: text('artifact_key'),
+    artifactSha256: varchar('artifact_sha256', { length: 64 }),
     reviewNote: text('review_note'),
     requestedAt: timestamp('requested_at', { withTimezone: true }).defaultNow().notNull(),
     reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
@@ -31,6 +34,7 @@ export const deploymentRequests = appSchema.table(
     index('deployment_requests_environment_idx').on(table.environmentId),
     index('deployment_requests_status_idx').on(table.status),
     index('deployment_requests_requested_idx').on(table.requestedAt),
+    index('deployment_requests_promotion_deployment_idx').on(table.promotionDeploymentId),
   ],
 );
 

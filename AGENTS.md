@@ -4092,3 +4092,13 @@ This section is newer than all earlier Public AI, Platform AI, Enterprise AI, pr
 - Enterprise AI infrastructure promotion passed fail-closed smoke. `customerInferenceEnabled` remains OFF until managed/external/BYOK, commercial/budget/provider-cost, tenant/domain/white-label and controlled Starpips channel/handoff/accounting acceptance, followed by guarded intentional promotion.
 - Public/app/admin signed-in role, route, visual and no-code draft/publish/rollback acceptance remains to be recorded. The original public cutover workflow targets an obsolete branch and is unsuitable for already bound production routes.
 - Main-push MegaLinter full-codebase mode still fails on historical actionlint/ShellCheck diagnostics; PR changed-file MegaLinter passed. Do not describe whole-codebase lint or all customer paths as clean until separately verified.
+
+# 2026-10-23 Current Truth Override — Repo and Runtime Work
+
+This section is the current operational authority for the active Mkety current-truth, `mkety.app`, NowPayments, and central-AI parity work. It supersedes older statements below that describe the public cutover as pending or repeatedly required. The public `mkety.com` cutover was completed previously; routine edits do not trigger another cutover. See `docs/CURRENT_WORKSTREAM_STATUS.md` for exact branch status and evidence.
+
+- `app.mkety.com` remains the authenticated platform. `mkety.app` is the customer application/preview base domain; the apex should serve a branded Mkety Apps endpoint and verified customer deployments use isolated `*.mkety.app` hostnames. Never execute customer code in the authenticated platform Worker.
+- Public AI, Workspace AI, and the central provider/model catalog share the same central encrypted provider connections and Workers AI binding. Public and Workspace routing/enablement/data policies remain independent; Enterprise AI disablement must not gate them.
+- Assist remains a separate production application with separate runtime, controls, customer data, and ledger. Share the provider/model catalog contract only; do not couple Assist to Platform credentials, database context, or billing ledger.
+- New Drizzle migrations on this branch are ordered 0044 Public provider consolidation, 0045 deployment hostnames, 0046 Enterprise NOWPayments checkout token, and 0047 NOWPayments network evidence. Keep journal/snapshot ordering consistent and do not apply production migrations as part of branch implementation.
+- Required implementation plans are in `docs/superpowers/plans/`. Treat local focused tests/typecheck/migration-baseline checks as code evidence only; production binding, DNS, payment, and exact-head CI acceptance are separate gates.

@@ -8,9 +8,11 @@ This repository is the Mkety product codebase. It is no longer governed as the u
 2. [`FEATURE_AGENT_HANDOFF_PROTOCOL.md`](./FEATURE_AGENT_HANDOFF_PROTOCOL.md) — mandatory completion/handoff discipline for every feature/workstream agent.
 3. [`CURRENT_WORKSTREAM_STATUS.md`](./CURRENT_WORKSTREAM_STATUS.md) — concise pointer to what is being worked on now, its verified state, blockers, and exact next steps.
 4. [`MKETY_DEVELOPMENT_CONTINUATION.md`](./MKETY_DEVELOPMENT_CONTINUATION.md) — operational milestone order and long-running continuation roadmap.
-5. [`handoffs/2026-09-29-mail-production-gateway-next.md`](./handoffs/2026-09-29-mail-production-gateway-next.md) — latest operational handoff: Mail Cloudflare production accepted; dedicated IMAP/SMTP gateway is the next gate before controlled customer acceptance.\n6. [`handoffs/2026-09-29-production-ready-starpips-next.md`](./handoffs/2026-09-29-production-ready-starpips-next.md) — historical pre-stabilization production handoff; Starpips remains paused behind current customer-acceptance gates.\n6. The approved spec/plan for the active feature branch.
-7. Current branch code, migrations, tests, and immutable CI/deployment evidence.
-8. Older release handoffs, including `MKETY_RELEASE_GATE_HANDOFF_2026-09-10.md`, are historical unless a newer current-state record explicitly points back to them.
+5. [`handoffs/2026-09-29-mail-production-gateway-next.md`](./handoffs/2026-09-29-mail-production-gateway-next.md) — historical Mail gateway handoff; consult current workstream status for active work.
+6. [`handoffs/2026-09-29-production-ready-starpips-next.md`](./handoffs/2026-09-29-production-ready-starpips-next.md) — historical pre-stabilization production handoff; Starpips remains paused behind current customer-acceptance gates.
+7. The approved spec/plan for the active feature branch.
+8. Current branch code, migrations, tests, and immutable CI/deployment evidence.
+9. Older release handoffs, including `MKETY_RELEASE_GATE_HANDOFF_2026-09-10.md`, are historical unless a newer current-state record explicitly points back to them.
 
 When an older document conflicts with `AGENTS.md` or fresher verified handoff evidence, treat the older statement as historical and update it before using it as an implementation source.
 
@@ -20,8 +22,13 @@ When an older document conflicts with `AGENTS.md` or fresher verified handoff ev
 | --- | --- |
 | [`FEATURE_AGENT_HANDOFF_PROTOCOL.md`](./FEATURE_AGENT_HANDOFF_PROTOCOL.md) | Mandatory feature-agent progress, evidence, blocker, and next-step update gate |
 | [`CURRENT_WORKSTREAM_STATUS.md`](./CURRENT_WORKSTREAM_STATUS.md) | Current workstream, status, blocker, verification, and exact resume point |
-| [`MKETY_DEVELOPMENT_CONTINUATION.md`](./MKETY_DEVELOPMENT_CONTINUATION.md) | Public-site-first milestone order and Platform continuation sequence |
-| [`handoffs/2026-09-29-mail-production-gateway-next.md`](./handoffs/2026-09-29-mail-production-gateway-next.md) | Latest operational handoff: Mail production accepted; external-client gateway is the active infrastructure gate |\n| [`handoffs/2026-09-29-production-ready-starpips-next.md`](./handoffs/2026-09-29-production-ready-starpips-next.md) | Historical pre-stabilization handoff; Starpips remains paused |\n| [`MKETY_AI_RUNTIME_GATEWAY_ARCHITECTURE.md`](./MKETY_AI_RUNTIME_GATEWAY_ARCHITECTURE.md) | Shared AI runtime, provider, domain, channel, and Enterprise AI architecture |
+| [`NOWPAYMENTS_INTEGRATION_PLAYBOOK.md`](./NOWPAYMENTS_INTEGRATION_PLAYBOOK.md) | Shared NOWPayments behavior and security contract across Mkety products |
+| [`MKETY_DEVELOPMENT_CONTINUATION.md`](./MKETY_DEVELOPMENT_CONTINUATION.md) | Current operational milestone order and Platform continuation sequence |
+| [`handoffs/2026-09-29-mail-production-gateway-next.md`](./handoffs/2026-09-29-mail-production-gateway-next.md) | Historical Mail production handoff; consult current workstream status for active work |
+| [`handoffs/2026-09-29-production-ready-starpips-next.md`](./handoffs/2026-09-29-production-ready-starpips-next.md) | Historical pre-stabilization handoff; Starpips remains paused |
+| [`superpowers/plans/2026-10-21-mkety-app-hosting-domain.md`](./superpowers/plans/2026-10-21-mkety-app-hosting-domain.md) | Customer application hosting and `mkety.app` dispatch plan |
+| [`superpowers/plans/2026-10-21-mkety-nowpayments-product-parity.md`](./superpowers/plans/2026-10-21-mkety-nowpayments-product-parity.md) | NOWPayments parity plan |
+| [`MKETY_AI_RUNTIME_GATEWAY_ARCHITECTURE.md`](./MKETY_AI_RUNTIME_GATEWAY_ARCHITECTURE.md) | Shared AI runtime, provider, domain, channel, and Enterprise AI architecture |
 | [`MKETY_AI_PRODUCT_COMMERCIAL_SECURITY_SPEC.md`](./MKETY_AI_PRODUCT_COMMERCIAL_SECURITY_SPEC.md) | Enterprise AI product, commercial, security, usage, and operations policy |
 | [`MKETY_AI_ENTERPRISE_CAPABILITY_MAP.md`](./MKETY_AI_ENTERPRISE_CAPABILITY_MAP.md) | Broad Enterprise AI capability envelope; not a claim that every capability is launch-enabled |
 | [`MKETY_RELEASE_GATE_HANDOFF_2026-09-10.md`](./MKETY_RELEASE_GATE_HANDOFF_2026-09-10.md) | Public-site release-gate and Platform continuation boundary; use only with fresher current-state evidence |

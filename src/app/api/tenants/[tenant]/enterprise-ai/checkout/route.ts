@@ -32,8 +32,8 @@ export async function POST(request: Request, context: { params: Promise<{ tenant
 
   const contentType = request.headers.get('content-type') ?? '';
   const body = contentType.includes('application/json')
-    ? await request.json().catch(() => ({})) as { provider?: string; collectionCurrency?: string; fundingAmountUsd?: string }
-    : Object.fromEntries(await request.formData()) as { provider?: string; collectionCurrency?: string; fundingAmountUsd?: string };
+    ? await request.json().catch(() => ({})) as { provider?: string; collectionCurrency?: string; payCurrency?: string; fundingAmountUsd?: string }
+    : Object.fromEntries(await request.formData()) as { provider?: string; collectionCurrency?: string; payCurrency?: string; fundingAmountUsd?: string };
 
   const provider = String(body.provider ?? 'nowpayments');
   const fundingText = String(body.fundingAmountUsd ?? '').trim();
@@ -99,7 +99,8 @@ export async function POST(request: Request, context: { params: Promise<{ tenant
       customer: session.user.email
         ? { email: session.user.email, name: session.user.name ?? undefined }
         : undefined,
-        collectionCurrency: provider === 'flutterwave' ? collectionCurrency : undefined,
+      collectionCurrency: provider === 'flutterwave' ? collectionCurrency : undefined,
+      payCurrency: provider === 'nowpayments' ? String(body.payCurrency ?? '') : undefined,
       fundingAmountMinor,
     });
 

@@ -282,9 +282,7 @@ export async function createFirstPartySmtpCredential(
   state: { secret?: string; error?: string },
   formData: FormData,
 ): Promise<{ secret?: string; error?: string }> {
-  return withServerActionDatabase(() =>
-    createFirstPartySmtpCredentialImpl(opsTenantSlug, state, formData),
-  );
+  return withServerActionDatabase(() => createFirstPartySmtpCredentialImpl(opsTenantSlug, state, formData));
 }
 
 export async function configureFirstPartyMailIngressAliases(
