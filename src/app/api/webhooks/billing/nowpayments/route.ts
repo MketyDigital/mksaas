@@ -68,6 +68,7 @@ export async function POST(request: Request) {
           providerEventId: settlement.providerEventId ?? '',
           providerAmountPaidMinor: settlement.providerAmountPaidMinor ?? settlement.amountPaidMinor,
           providerCurrencyPaid: settlement.providerCurrencyPaid ?? settlement.currencyPaid,
+          providerPayCurrency: settlement.providerPayCurrency,
           rawReference: settlement.rawReference ?? '',
           occurredAt: now,
         });

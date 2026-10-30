@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 type Provider = {
   value: 'nowpayments' | 'flutterwave' | 'kora';
@@ -30,8 +30,30 @@ export function EnterpriseAiCheckoutForm({
 }: Props) {
   const [provider, setProvider] = useState<Provider['value']>(providers[0]?.value ?? 'nowpayments');
   const [fundingAmountUsd, setFundingAmountUsd] = useState(amount?.defaultValue ?? '');
+  const [currencyOptions, setCurrencyOptions] = useState<string[]>([]);
+  const [payCurrency, setPayCurrency] = useState('');
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!providers.some((item) => item.value === 'nowpayments')) return;
+    let active = true;
+    void fetch('/api/payments/nowpayments/currencies', { cache: 'no-store' })
+      .then(async (response) => response.ok ? await response.json() as { currencies?: unknown; defaultCurrency?: unknown } : null)
+      .then((payload) => {
+        if (!active || !payload) return;
+        const currencies = Array.isArray(payload.currencies)
+          ? payload.currencies.filter((value): value is string => typeof value === 'string')
+          : [];
+        setCurrencyOptions(currencies);
+        const preferred = typeof payload.defaultCurrency === 'string' ? payload.defaultCurrency : '';
+        setPayCurrency((current) => current && currencies.includes(current) ? current : preferred);
+      })
+      .catch(() => {
+        if (active) setCurrencyOptions([]);
+      });
+    return () => { active = false; };
+  }, [providers]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -48,6 +70,7 @@ export function EnterpriseAiCheckoutForm({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             provider,
+                ...(provider === 'nowpayments' && payCurrency ? { payCurrency } : {}),
             ...(amount ? { fundingAmountUsd } : {}),
           }),
         },
@@ -112,6 +135,23 @@ export function EnterpriseAiCheckoutForm({
           </option>
         ))}
       </select>
+
+      {provider === 'nowpayments' ? currencyOptions.length ? (
+        <label className={compact ? 'text-sm font-medium' : 'text-sm font-medium sm:col-span-2'}>
+          Cryptocurrency network
+          <select
+            className="mt-1 w-full rounded-xl border bg-background px-3 py-3 text-sm"
+            value={payCurrency}
+            onChange={(event) => setPayCurrency(event.target.value)}
+          >
+            {currencyOptions.map((currency) => (
+              <option key={currency} value={currency}>{currency}</option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <p className="text-xs text-muted-foreground">Network choices will be provided securely by NOWPayments during checkout.</p>
+      ) : null}
 
       <button
         className="rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground disabled:opacity-60"

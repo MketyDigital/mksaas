@@ -81,10 +81,45 @@ describe('APP-07 deployment approval boundary', () => {
     const panel = await read('src/features/deploy/components/DeployFoundationPanel.tsx');
     const actions = await read('src/features/deploy/actions.ts');
 
-    expect(panel).toContain('Production, DNS and custom domains stay blocked');
+    expect(panel).toContain('DNS and custom domains are not changed');
     expect(actions).not.toContain('customHostname');
     expect(actions).not.toContain('rollbackDeployment');
     expect(actions).not.toContain('deployProduction');
+  });
+
+  it('keeps customer bundle execution separate from the proof-only candidate path', async () => {
+    const actions = await read('src/features/deploy/actions.ts');
+    const panel = await read('src/features/deploy/components/DeployFoundationPanel.tsx');
+    const provider = await read('src/features/deploy/server/providers/cloudflare-dispatch.ts');
+
+    expect(actions).toContain('createCustomerDeploymentRequest');
+    expect(actions).toContain('executeApprovedCustomerDeploymentRequest');
+    expect(actions).toContain('artifactSha256: request.artifactSha256');
+    expect(actions).toContain('createCustomerDeploymentProvider');
+    expect(panel).toContain('Upload a JSON module manifest');
+    expect(panel).toContain('executeApprovedCustomerDeploymentRequest');
+    expect(provider).toContain('approved immutable artifact');
+    expect(provider).toContain('verifyNamespace');
+    expect(actions).toContain("kind: 'preview'");
+  });
+
+  it('routes production alias changes through an approved request and an audited alias transition', async () => {
+    const actions = await read('src/features/deploy/actions.ts');
+    const review = await read('src/features/deploy/request-actions.ts');
+    const panel = await read('src/features/deploy/components/DeployFoundationPanel.tsx');
+    const schema = await read('src/shared/db/schema/deployment-requests.ts');
+
+    expect(actions).toContain('createProductionPromotionRequest');
+    expect(actions).toContain('executeApprovedProductionPromotionRequest');
+    expect(actions).toContain("eq(deploymentRequests.status, 'approved')");
+    expect(actions).toContain("action: 'deployment.production_alias.promoted'");
+    expect(review).toContain("requirePermission(tenantSlug, 'platform:deployments')");
+    expect(panel).toContain('Request production alias promotion');
+    expect(panel).toContain('executeApprovedProductionPromotionRequest');
+    expect(schema).toContain('promotionDeploymentId');
+    expect(actions).not.toContain('deployProduction(');
+    expect(actions).not.toContain('cloudflare.routes');
+    expect(actions).not.toContain('cloudflare.dns');
   });
 
   it('keeps migration 0015 additive', async () => {

@@ -15,6 +15,7 @@ export interface BillingCheckoutSettlementContext {
   currency: string;
   providerAmountExpectedMinor: bigint | null;
   providerCurrency: string | null;
+  providerPayCurrency: string | null;
   provider: string;
   purpose: string;
 }
@@ -32,6 +33,7 @@ export async function findBillingCheckoutSettlementContext(
       currency: billingCheckouts.currency,
       providerAmountExpectedMinor: billingCheckouts.providerAmountExpectedMinor,
       providerCurrency: billingCheckouts.providerCurrency,
+      providerPayCurrency: billingCheckouts.providerPayCurrency,
       provider: billingCheckouts.provider,
       purpose: billingCheckouts.purpose,
     })

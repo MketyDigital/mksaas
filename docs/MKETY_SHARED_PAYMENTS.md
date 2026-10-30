@@ -26,13 +26,13 @@ Flutterwave v4 is not part of the active runtime. Flutterwave's current platform
 6. Settlement is idempotent and applies through the owning Billing/Enterprise ledger.
 7. Provider secrets are server-only.
 8. Mkety never collects or stores raw card details.
-9. Products must use the shared payment boundary rather than owning independent provider credentials and settlement logic.
+9. Mkety Platform products use the shared payment boundary. Assist keeps its standalone production payment runtime, credentials, customer/order records, and credit ledger; it follows the shared NOWPayments contract without importing Platform payment code.
 10. NOWPayments invoices use canonical short Mkety references (`SAAS-MKS-*`, `ENT-MKE-*`, etc.); legacy billing references remain accepted only for settlement compatibility.
 
 ## High-level topology
 
 ```text
-Mkety product / checkout
+Mkety Platform product / checkout
         |
         v
 Shared Mkety payment boundary
@@ -51,12 +51,15 @@ verified webhook + server re-query
         +-- Enterprise ----> MkSaaS Enterprise order ledger
         +-- Media ---------> verified forwarding to Media-owned ledger
         +-- Host ----------> verified forwarding to Host-owned ledger
-        +-- Assist --------> verified forwarding to Assist-owned credit ledger
 ```
+
+Assist is a separate payment boundary. It applies the same NOWPayments currency, quote, verification, status, and ID-separation contract within its own production runtime and ledger.
 
 ## Provider availability
 
 ### NOWPayments — primary/default
+
+Shared product behavior is defined in [`NOWPAYMENTS_INTEGRATION_PLAYBOOK.md`](./NOWPAYMENTS_INTEGRATION_PLAYBOOK.md). This document defines the Mkety Platform payment boundary; Assist remains isolated as described above.
 
 Available when:
 

@@ -10,8 +10,8 @@ import {
 } from '@/features/ai-runtime/server/provider-connections';
 import { requirePlatformControlAccess } from '@/features/platform-content/server/authorization';
 import {
-  assertCurrentPublicAIModel,
   getDefaultPublicAIModel,
+  normalizePublicAIModelSelections,
   type PublicAIProviderId,
 } from '@/features/public-assistant/models';
 import { db } from '@/shared/db/cloudflare';
@@ -93,7 +93,7 @@ function revalidate(_tenantSlug: string) {
 async function savePublicAiProviderConnectionImpl(tenantSlug: string, formData: FormData) {
   await requireAiOps(tenantSlug);
   await saveSystemAiProviderConnection({
-    mode: 'public',
+    mode: 'platform',
     provider: providerInput(formData),
   });
   revalidate(tenantSlug);
@@ -104,7 +104,7 @@ async function disablePublicAiProviderConnectionImpl(
   providerKey: CentralAiProviderId,
 ) {
   await requireAiOps(tenantSlug);
-  await disableSystemAiProviderConnection({ mode: 'public', providerKey });
+  await disableSystemAiProviderConnection({ mode: 'platform', providerKey });
   revalidate(tenantSlug);
 }
 
@@ -124,12 +124,11 @@ async function updatePublicAiRoutingImpl(tenantSlug: string, formData: FormData)
     .filter((provider, index, providers) =>
       provider !== primaryProviderRaw && providers.indexOf(provider) === index);
 
-  const models: Partial<Record<PublicAIProviderId, string>> = {};
+  const submittedModels: Partial<Record<PublicAIProviderId, string>> = {};
   for (const provider of PROVIDERS) {
-    const model = text(formData, `model_${provider}`) || getDefaultPublicAIModel(provider);
-    assertCurrentPublicAIModel(provider, model);
-    models[provider] = model;
+    submittedModels[provider] = text(formData, `model_${provider}`) || getDefaultPublicAIModel(provider);
   }
+  const models = normalizePublicAIModelSelections(submittedModels, [primaryProviderRaw, ...fallbackProviders]);
 
   const row = await db.query.platformAppControlCenterModules.findFirst({
     where: eq(platformAppControlCenterModules.moduleKey, 'ai-operations'),

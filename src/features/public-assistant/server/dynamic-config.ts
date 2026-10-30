@@ -10,8 +10,8 @@ import { platformAppControlCenterModules } from '@/shared/db/schema/platform-app
 import type { PublicAIProviderTarget } from './gateway';
 import { createPublicAIProviderAdapters } from './providers';
 import {
-  assertCurrentPublicAIModel,
   getDefaultPublicAIModel,
+  normalizePublicAIModelSelections,
   type PublicAIProviderId,
 } from '../models';
 
@@ -37,49 +37,44 @@ function isProvider(value: unknown): value is PublicAIProviderId {
 }
 
 export async function getDynamicPublicAiConfig(): Promise<DynamicPublicAiConfig | null> {
+  let row;
   try {
-    const row = await db.query.platformAppControlCenterModules.findFirst({
+    row = await db.query.platformAppControlCenterModules.findFirst({
       where: eq(platformAppControlCenterModules.moduleKey, 'ai-operations'),
       columns: { metadataJson: true },
     });
-    const metadata = row?.metadataJson;
-    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
-    const raw = (metadata as Record<string, unknown>).publicAiConfig;
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-
-    const value = raw as Record<string, unknown>;
-    const primaryProvider = isProvider(value.primaryProvider) ? value.primaryProvider : 'openai';
-    const fallbackProviders = Array.isArray(value.fallbackProviders)
-      ? value.fallbackProviders.filter(isProvider)
-          .filter((provider, index, providers) => provider !== primaryProvider && providers.indexOf(provider) === index)
-      : [];
-
-    const models: Partial<Record<PublicAIProviderId, string>> = {};
-    if (value.models && typeof value.models === 'object' && !Array.isArray(value.models)) {
-      for (const provider of PROVIDERS) {
-        const model = (value.models as Record<string, unknown>)[provider];
-        if (typeof model === 'string' && model.trim()) {
-          assertCurrentPublicAIModel(provider, model.trim());
-          models[provider] = model.trim();
-        }
-      }
-    }
-
-    return {
-      enabled: value.enabled === true,
-      primaryProvider,
-      fallbackProviders,
-      models,
-    };
   } catch {
     return null;
   }
+  const metadata = row?.metadataJson;
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  const raw = (metadata as Record<string, unknown>).publicAiConfig;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+
+  const value = raw as Record<string, unknown>;
+  const primaryProvider = isProvider(value.primaryProvider) ? value.primaryProvider : 'openai';
+  const fallbackProviders = Array.isArray(value.fallbackProviders)
+    ? value.fallbackProviders.filter(isProvider)
+        .filter((provider, index, providers) => provider !== primaryProvider && providers.indexOf(provider) === index)
+    : [];
+
+  const rawModels = value.models && typeof value.models === 'object' && !Array.isArray(value.models)
+    ? value.models as Partial<Record<PublicAIProviderId, string>>
+    : {};
+  const models = normalizePublicAIModelSelections(rawModels, [primaryProvider, ...fallbackProviders]);
+
+  return {
+    enabled: value.enabled === true,
+    primaryProvider,
+    fallbackProviders,
+    models,
+  };
 }
 
 export async function getPublicAiControlOverview() {
   const [config, connections] = await Promise.all([
     getDynamicPublicAiConfig(),
-    listSystemAiProviderConnections('public'),
+    listSystemAiProviderConnections('platform'),
   ]);
   return {
     config: config ?? {
@@ -112,7 +107,7 @@ export async function resolveDynamicPublicAiTargets(
 
     try {
       const { adapter } = await resolveSystemAiProviderConnection({
-        mode: 'public',
+        mode: 'platform',
         providerKey: provider,
       });
       targets.push({

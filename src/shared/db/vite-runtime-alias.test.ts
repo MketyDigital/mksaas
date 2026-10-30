@@ -196,11 +196,10 @@ describe('Cloudflare Worker database build wiring', () => {
     expect(dbIndex).not.toContain('runtime-connection.cloudflare');
     expect(cloudflareDatabase).toContain("from './runtime-connection.cloudflare'");
     expect(requestDatabase).toContain("from '@/shared/db/runtime-connection.cloudflare'");
-    expect(publicAIRequestDatabase).toContain(
-      "from '@/shared/db/runtime-connection.cloudflare'",
-    );
+    expect(publicAIRequestDatabase).toContain("from '@/shared/db/request'");
+    expect(publicAIRequestDatabase).toContain('return withRequestDatabase(work)');
     expect(requestDatabase).not.toContain("from '@/shared/db/runtime-connection'");
-    expect(publicAIRequestDatabase).not.toContain("from '@/shared/db/runtime-connection'");
+    expect(publicAIRequestDatabase).not.toContain("from '@/shared/db/runtime-connection");
     expect(nodeDatabase).toContain("from './runtime-connection'");
     expect(nodeDatabase).not.toContain('runtime-connection.cloudflare');
   });

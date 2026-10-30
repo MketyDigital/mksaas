@@ -20,6 +20,7 @@ export * from './billing-subscriptions';
 export * from './credit-ledger-entries';
 export * from './departments';
 export * from './deployment-requests';
+export * from './deployment-hostnames';
 export * from './deployments';
 export * from './domains';
 export * from './embeddings';

@@ -1,3 +1,13 @@
+# 2026-10-23 Repository Continuation Authority
+
+The public `mkety.com` cutover was completed previously. This workstream does not require repeating `CUTOVER MKETY PUBLIC` for routine product and documentation changes. The current implementation plan and evidence are in `docs/CURRENT_WORKSTREAM_STATUS.md`.
+
+Current target topology: `app.mkety.com` is the authenticated Platform; `mkety.app` is the branded customer app/preview endpoint with isolated verified `*.mkety.app` customer deployments. The central Mkety provider/model catalog, encrypted provider connections, and Workers AI binding are shared by Public AI and Workspace AI while each surface retains independent routing and policy. Enterprise AI off must not disable them. Assist remains a separate application/runtime/data/payment-ledger boundary and shares only the versioned provider/model contract.
+
+This repository branch is implementing current-state docs, shared AI runtime parity, `mkety.app` customer hosting, and NowPayments parity. Local code checks are not production DNS, provider, payment, migration, or release acceptance.
+
+---
+
 # 2026-10-13 PgBouncer v2 production recovery — authorization blocker
 
 This section supersedes the earlier outage next step while the production repair is blocked.

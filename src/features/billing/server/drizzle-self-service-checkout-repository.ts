@@ -138,6 +138,7 @@ export const drizzleSelfServiceCheckoutRepository: SelfServiceCheckoutRepository
         checkoutUrl: input.checkoutUrl,
         providerAmountExpectedMinor: input.providerAmountExpectedMinor ?? null,
         providerCurrency: input.providerCurrency ?? null,
+        providerPayCurrency: input.providerPayCurrency ?? null,
         expiresAt: input.expiresAt ?? null,
         status: 'redirected',
         updatedAt: input.updatedAt,

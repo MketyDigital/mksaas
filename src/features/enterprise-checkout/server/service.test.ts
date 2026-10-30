@@ -3,6 +3,7 @@ import type { PlatformEnterpriseOrder } from '@/shared/db/schema/platform-enterp
 import type { EnterpriseOrderRepository } from './repository';
 import { createEnterpriseCheckoutService } from './service';
 import type { EnterpriseCheckoutProviderAdapter } from '../providers/types';
+import { hashEnterprisePaymentToken } from './payment-capability';
 
 const request = {
   fullName: 'Jane Doe',
@@ -33,6 +34,9 @@ function makeOrder(overrides: Partial<PlatformEnterpriseOrder> = {}): PlatformEn
     paymentStatus: 'pending',
     providerCheckoutReference: null,
     providerPaymentReference: null,
+    checkoutTokenHash: null,
+    checkoutTokenExpiresAt: null,
+    providerPayCurrency: null,
     idempotencyKey: 'aaaaaaaa',
     metadata: {},
     createdAt: new Date(),
@@ -64,6 +68,8 @@ describe('enterprise checkout service', () => {
       async findById() {
         return null;
       },
+      async findByCheckoutTokenHash() { return null; },
+      async beginInvoiceCreation() { return null; },
     };
     const adapter: EnterpriseCheckoutProviderAdapter = {
       provider: 'nowpayments',
@@ -120,6 +126,8 @@ describe('enterprise checkout service', () => {
       async findById() {
         return null;
       },
+      async findByCheckoutTokenHash() { return null; },
+      async beginInvoiceCreation() { return null; },
     };
     const adapter: EnterpriseCheckoutProviderAdapter = {
       provider: 'nowpayments',
@@ -157,6 +165,8 @@ describe('enterprise checkout service', () => {
       async findById() {
         return null;
       },
+      async findByCheckoutTokenHash() { return null; },
+      async beginInvoiceCreation() { return null; },
     };
     const adapter: EnterpriseCheckoutProviderAdapter = {
       provider: 'nowpayments',
@@ -181,5 +191,60 @@ describe('enterprise checkout service', () => {
     );
     expect(created).toBe(true);
     expect(failureCalls).toEqual(['MKETY-ENT-2']);
+  });
+
+  it('issues a hashed, expiring paypoint without creating a provider invoice until the customer chooses a ticker', async () => {
+    let created: Parameters<EnterpriseOrderRepository['createOrder']>[0] | undefined;
+    let providerCalls = 0;
+    const repository: EnterpriseOrderRepository = {
+      async findByIdempotencyKey() { return null; },
+      async createOrder(input) { created = input; return makeOrder(input); },
+      async updateCheckout() {},
+      async applyPaymentState() { return makeOrder(); },
+      async findById() { return null; },
+      async findByCheckoutTokenHash() { return null; },
+      async beginInvoiceCreation() { return null; },
+    };
+    const adapter: EnterpriseCheckoutProviderAdapter = {
+      provider: 'nowpayments',
+      async createCheckout() { providerCalls++; throw new Error('invoice must be deferred'); },
+    };
+    const service = createEnterpriseCheckoutService({ repository, getProvider: () => adapter, createOrderId: () => 'MKETY-ENT-deferred' });
+    const result = await service.createEnterpriseCheckout(request, { idempotencyKey: 'deferred1', deferNowPaymentsInvoice: true });
+    expect(result.redirectUrl).toMatch(/^https:\/\/mkety\.com\/payment\/enterprise\/checkout\?token=[a-f0-9]{64}$/);
+    const token = new URL(result.redirectUrl).searchParams.get('token')!;
+    expect(created?.checkoutStatus).toBe('awaiting_payment_selection');
+    expect(created?.checkoutTokenHash).toBe(await hashEnterprisePaymentToken(token));
+    expect(created?.checkoutTokenExpiresAt).toBeInstanceOf(Date);
+    expect(created?.metadata).not.toHaveProperty('checkoutToken');
+    expect(providerCalls).toBe(0);
+  });
+
+  it('creates the customer-selected currency invoice only after claiming the one-time order state', async () => {
+    const token = 'a'.repeat(64);
+    const tokenHash = await hashEnterprisePaymentToken(token);
+    const calls: string[] = [];
+    const order = makeOrder({ checkoutStatus: 'awaiting_payment_selection', checkoutTokenHash: tokenHash,
+      checkoutTokenExpiresAt: new Date(Date.now() + 60_000) });
+    const repository: EnterpriseOrderRepository = {
+      async findByIdempotencyKey() { return null; },
+      async createOrder() { throw new Error('not called'); },
+      async updateCheckout(input) { calls.push(`update:${input.checkoutStatus}`); },
+      async applyPaymentState() { return order; },
+      async findById() { return order; },
+      async findByCheckoutTokenHash() { return order; },
+      async beginInvoiceCreation(_orderId, ticker) { calls.push(`claim:${ticker}`); return order; },
+    };
+    const adapter: EnterpriseCheckoutProviderAdapter = {
+      provider: 'nowpayments',
+      async createCheckout(input) {
+        calls.push(`invoice:${input.payCurrency}`);
+        return { provider: 'nowpayments', redirectUrl: 'https://mkety.com/payment/nowpayments?iid=inv-1', status: 'checkout_created', providerCheckoutReference: 'inv-1' };
+      },
+    };
+    const service = createEnterpriseCheckoutService({ repository, getProvider: () => adapter });
+    const result = await service.startNowPaymentsInvoice({ token, payCurrency: 'USDTTRC20' });
+    expect(result.redirectUrl).toBe('https://mkety.com/payment/nowpayments?iid=inv-1');
+    expect(calls).toEqual(['claim:USDTTRC20', 'invoice:USDTTRC20', 'update:redirected']);
   });
 });

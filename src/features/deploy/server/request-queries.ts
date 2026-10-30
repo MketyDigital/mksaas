@@ -19,6 +19,7 @@ export interface DeploymentApprovalRow {
   requestedAt: Date;
   requestedByUserId: string | null;
   status: string;
+  promotionDeploymentId: string | null;
 }
 
 export async function getDeploymentApprovalQueue(tenantId: string): Promise<DeploymentApprovalRow[]> {
@@ -35,6 +36,7 @@ export async function getDeploymentApprovalQueue(tenantId: string): Promise<Depl
         requestedAt: deploymentRequests.requestedAt,
         requestedByUserId: deploymentRequests.requestedByUserId,
         status: deploymentRequests.status,
+        promotionDeploymentId: deploymentRequests.promotionDeploymentId,
       })
       .from(deploymentRequests)
       .innerJoin(projects, eq(deploymentRequests.projectId, projects.id))

@@ -13,7 +13,8 @@ const order = {
   id: 'order-1', customerName: 'Customer', companyName: 'Starpips', email: 'buyer@example.test', phone: null,
   country: null, scopeId: 'mail', projectName: 'Starpips Mail', projectDescription: null, amountMinor: 125000n,
   currency: 'USD', paymentProvider: 'kora', checkoutStatus: 'completed', paymentStatus: 'confirmed',
-  providerCheckoutReference: null, providerPaymentReference: 'provider-payment', idempotencyKey: 'offer-one',
+  providerCheckoutReference: null, providerPaymentReference: 'provider-payment', checkoutTokenHash: null,
+  checkoutTokenExpiresAt: null, providerPayCurrency: null, idempotencyKey: 'offer-one',
   metadata: { mailEnterpriseOfferId: 'offer-1', mailEnterpriseTenantId: 'tenant-1' },
   createdAt: new Date(0), updatedAt: new Date(0), confirmedAt: new Date(1000),
 } satisfies PlatformEnterpriseOrder;

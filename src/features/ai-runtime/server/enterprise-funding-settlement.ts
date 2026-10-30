@@ -19,6 +19,7 @@ export async function applyEnterpriseAiFundingSettlement(input: {
   providerEventId: string;
   providerAmountPaidMinor: bigint;
   providerCurrencyPaid: string;
+  providerPayCurrency?: string;
   rawReference: string;
   occurredAt: Date;
 }) {
@@ -71,6 +72,7 @@ export async function applyEnterpriseAiFundingSettlement(input: {
       currencyPaid: checkout.currency,
       providerAmountPaidMinor: input.providerAmountPaidMinor,
       providerCurrencyPaid: input.providerCurrencyPaid,
+      providerPayCurrency: input.providerPayCurrency ?? null,
       status: 'applied',
       rawReference: input.rawReference,
       occurredAt: input.occurredAt,

@@ -99,6 +99,7 @@ async function renderPlatformControlModulePage({ params, searchParams }: Platfor
   const adminStatus = typeof query.adminStatus === 'string' ? query.adminStatus : null;
   const adminAction = typeof query.adminAction === 'string' ? query.adminAction : null;
   const adminMessage = typeof query.adminMessage === 'string' ? query.adminMessage : null;
+  const adminReference = typeof query.adminReference === 'string' ? query.adminReference : null;
   await requirePlatformControlAccess(tenant);
 
   const moduleAliases: Record<string, string> = {
@@ -196,6 +197,7 @@ async function renderPlatformControlModulePage({ params, searchParams }: Platfor
         <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           <p className="font-semibold">Admin action failed{adminAction ? ` · ${adminAction}` : ''}</p>
           <p className="mt-1">{adminMessage ?? 'The operation failed. Retry once or use the action reference for diagnosis.'}</p>
+          {adminReference ? <p className="mt-1 font-mono text-xs">Reference: {adminReference}</p> : null}
         </div>
       ) : null}
 

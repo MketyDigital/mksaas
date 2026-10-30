@@ -37,6 +37,8 @@ const source: BillingSummarySource = {
       {
         id: 'settlement-1',
         provider: 'nowpayments',
+        providerPaymentId: 'np-payment-123',
+        providerPayCurrency: 'USDTTON',
         amountPaidMinor: 1999n,
         currencyPaid: 'USD',
         status: 'applied',
@@ -55,7 +57,7 @@ describe('getTenantBillingSummary', () => {
       currentPeriod: { amountDueMinor: 1999n, currency: 'USD' },
       recentLedger: [{ id: 'ledger-1', entryType: 'payment', amountMinor: 1999n, currency: 'USD' }],
       recentSettlements: [
-        { id: 'settlement-1', provider: 'nowpayments', amountPaidMinor: 1999n, currencyPaid: 'USD', status: 'applied' },
+        { id: 'settlement-1', provider: 'nowpayments', providerPaymentId: 'np-payment-123', amountPaidMinor: 1999n, currencyPaid: 'USD', providerPayCurrency: 'USDTTON', status: 'applied' },
       ],
     });
   });
@@ -72,6 +74,7 @@ describe('getTenantBillingSummary', () => {
     expect(serialized).not.toContain('secret-provider-subscription-ref');
     expect(serialized).not.toContain('raw-provider-payload-reference');
     expect(serialized).not.toContain('internal-bank-reference');
+    expect(serialized).toContain('np-payment-123');
     expect(serialized.toLowerCase()).not.toContain('secret');
   });
 });

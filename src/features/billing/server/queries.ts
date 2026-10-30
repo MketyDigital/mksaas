@@ -28,10 +28,12 @@ export interface BillingLedgerSummaryRecord {
 export interface BillingSettlementSummaryRecord {
   id: string;
   provider: string;
+  providerPaymentId?: string | null;
   amountPaidMinor: bigint;
   currencyPaid: string;
   status: string;
   occurredAt: Date;
+  providerPayCurrency?: string | null;
   rawReference?: string | null;
 }
 
@@ -69,10 +71,12 @@ export interface TenantBillingSummary {
   recentSettlements: Array<{
     id: string;
     provider: string;
+    providerPaymentId: string | null;
     amountPaidMinor: bigint;
     currencyPaid: string;
     status: string;
     occurredAt: Date;
+    providerPayCurrency: string | null;
   }>;
 }
 
@@ -116,10 +120,12 @@ export async function getTenantBillingSummary(
     recentSettlements: settlements.map((settlement) => ({
       id: settlement.id,
       provider: settlement.provider,
+      providerPaymentId: settlement.providerPaymentId ?? null,
       amountPaidMinor: settlement.amountPaidMinor,
       currencyPaid: settlement.currencyPaid,
       status: settlement.status,
       occurredAt: settlement.occurredAt,
+      providerPayCurrency: settlement.providerPayCurrency ?? null,
     })),
   };
 }

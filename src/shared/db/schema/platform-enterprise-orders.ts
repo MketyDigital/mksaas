@@ -1,4 +1,4 @@
-import { bigint, index, jsonb, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { bigint, index, jsonb, text, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
 
 import { appSchema } from './schema';
 
@@ -21,6 +21,9 @@ export const platformEnterpriseOrders = appSchema.table(
     paymentStatus: text('payment_status').notNull().default('pending'),
     providerCheckoutReference: text('provider_checkout_reference'),
     providerPaymentReference: text('provider_payment_reference'),
+    checkoutTokenHash: varchar('checkout_token_hash', { length: 64 }),
+    checkoutTokenExpiresAt: timestamp('checkout_token_expires_at', { withTimezone: true }),
+    providerPayCurrency: varchar('provider_pay_currency', { length: 24 }),
     idempotencyKey: text('idempotency_key').notNull(),
     metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -33,6 +36,7 @@ export const platformEnterpriseOrders = appSchema.table(
     index('platform_enterprise_orders_payment_status_idx').on(table.paymentStatus),
     index('platform_enterprise_orders_provider_idx').on(table.paymentProvider),
     index('platform_enterprise_orders_created_idx').on(table.createdAt),
+    index('platform_enterprise_orders_checkout_token_hash_idx').on(table.checkoutTokenHash),
   ],
 );
 

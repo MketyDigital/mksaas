@@ -24,6 +24,8 @@ export type ByokProviderInput =
   | { provider: 'bedrock'; accessKeyId: string; secretAccessKey: string; sessionToken?: string; region?: string }
   | { provider: 'openai-compatible'; apiKey: string; endpoint: string };
 
+type SystemAiProviderMode = 'platform';
+
 function encryptionKey() {
   return getConnectionEncryptionKey();
 }
@@ -264,7 +266,7 @@ function adapterFromConnection(row: {
 }
 
 export async function saveSystemAiProviderConnection(input: {
-  mode: 'public' | 'platform';
+  mode: SystemAiProviderMode;
   provider: ByokProviderInput;
 }) {
   const normalized = normalizeInput(input.provider);
@@ -306,7 +308,7 @@ export async function saveSystemAiProviderConnection(input: {
   return created;
 }
 
-export async function listSystemAiProviderConnections(mode: 'public' | 'platform') {
+export async function listSystemAiProviderConnections(mode: SystemAiProviderMode) {
   return db.query.aiProviderConnections.findMany({
     where: and(
       isNull(aiProviderConnections.tenantId),
@@ -327,7 +329,7 @@ export async function listSystemAiProviderConnections(mode: 'public' | 'platform
 }
 
 export async function resolveSystemAiProviderConnection(input: {
-  mode: 'public' | 'platform';
+  mode: SystemAiProviderMode;
   providerKey: CentralAiProviderId;
 }) {
   const row = await db.query.aiProviderConnections.findFirst({
@@ -344,7 +346,7 @@ export async function resolveSystemAiProviderConnection(input: {
 }
 
 export async function disableSystemAiProviderConnection(input: {
-  mode: 'public' | 'platform';
+  mode: SystemAiProviderMode;
   providerKey: CentralAiProviderId;
 }) {
   const [row] = await db.update(aiProviderConnections).set({

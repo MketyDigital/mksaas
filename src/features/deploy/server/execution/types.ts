@@ -19,6 +19,9 @@ export interface DeploymentExecutionContext {
   releaseRef?: string | null;
   sourceRef?: string | null;
   requestedByUserId: string;
+  deploymentRequestId?: string;
+  artifactKey?: string | null;
+  artifactSha256?: string | null;
 }
 
 export interface DeploymentProviderResult {

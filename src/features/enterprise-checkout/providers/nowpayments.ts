@@ -1,4 +1,5 @@
 import { createMketyPaymentReference } from '@/features/payments/reference';
+import { fetchNowPaymentsCurrencies } from '@/features/payments/nowpayments-currencies';
 
 import type { EnterpriseCheckoutProviderAdapter, ProviderCheckoutInput } from './types';
 import { formatUsdMinorUnits } from '../domain';
@@ -17,6 +18,11 @@ export function createNowPaymentsAdapter(options: CreateNowPaymentsAdapterOption
       if (!options.apiKey) throw new Error('NOWPayments is not configured.');
 
       const priceAmount = Number(formatUsdMinorUnits(input.amountMinor));
+      const payCurrency = input.payCurrency?.trim().toUpperCase();
+      if (payCurrency) {
+        const activeCurrencies = await fetchNowPaymentsCurrencies({ apiKey: options.apiKey, fetchImpl });
+        if (!activeCurrencies.includes(payCurrency)) throw new Error('Selected NOWPayments currency is no longer available.');
+      }
       const encodedOrderId = encodeURIComponent(input.orderId);
       const uuid = input.orderId.startsWith('MKETY-ENT-') ? input.orderId.slice('MKETY-ENT-'.length) : '';
       const orderReference = createMketyPaymentReference('enterprise', uuid || undefined);
@@ -29,6 +35,9 @@ export function createNowPaymentsAdapter(options: CreateNowPaymentsAdapterOption
         body: JSON.stringify({
           price_amount: priceAmount,
           price_currency: 'usd',
+          ...(payCurrency ? { pay_currency: payCurrency } : {}),
+          is_fixed_rate: true,
+          is_fee_paid_by_user: true,
           order_id: orderReference,
           order_description: `Mkety Enterprise - ${input.project.name} (${input.customer.companyName})`,
           ipn_callback_url: 'https://mkety.com/api/webhooks/enterprise/nowpayments',

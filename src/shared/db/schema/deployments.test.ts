@@ -1,4 +1,4 @@
-import { deployApplications, deployEnvironments, deployments } from './deployments';
+import { deployApplications, deployEnvironments, deploymentRequests, deployments } from './index';
 
 describe('Deploy persistence schema', () => {
   it('scopes applications to tenants and projects', () => {
@@ -21,5 +21,11 @@ describe('Deploy persistence schema', () => {
     expect(deployments.status).toBeDefined();
     expect(deployments.releaseRef).toBeDefined();
     expect(deployments.providerDeploymentRef).toBeDefined();
+  });
+
+  it('can scope an approved production alias promotion to an immutable completed deployment', () => {
+    expect(deploymentRequests.promotionDeploymentId).toBeDefined();
+    expect(deploymentRequests.executionDeploymentId).toBeDefined();
+    expect(deploymentRequests.status).toBeDefined();
   });
 });

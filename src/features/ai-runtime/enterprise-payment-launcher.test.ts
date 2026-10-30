@@ -11,6 +11,20 @@ describe('Enterprise AI payment launcher', () => {
     expect(source).toContain("Payment checkout could not be created");
   });
 
+  it('loads active NOWPayments networks and sends the selected ticker to the server', async () => {
+    const source = await readFile('src/features/ai-runtime/components/EnterpriseAiCheckoutForm.tsx', 'utf8');
+    const route = await readFile('src/app/api/tenants/[tenant]/enterprise-ai/checkout/route.ts', 'utf8');
+    const contract = await readFile('src/features/ai-runtime/server/enterprise-contracts.ts', 'utf8');
+
+    expect(source).toContain("fetch('/api/payments/nowpayments/currencies'");
+    expect(source).toContain('payCurrency');
+    expect(source).toContain('currencyOptions.map');
+    expect(route).toContain('payCurrency?: string');
+    expect(route).toContain('payCurrency: provider === \'nowpayments\' ? String(body.payCurrency ?? \'\') : undefined');
+    expect(contract).toContain('payCurrency?: string');
+    expect(contract).toContain('payCurrency: input.payCurrency');
+  });
+
   it('only exposes payment gateways that are actually configured', async () => {
     const page = await readFile('src/app/app/[tenant]/enterprise-ai/page.tsx', 'utf8');
 

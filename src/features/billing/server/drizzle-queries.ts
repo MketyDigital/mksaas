@@ -109,6 +109,8 @@ export const drizzleBillingSummarySource: BillingSummarySource = {
       .select({
         id: billingSettlements.id,
         provider: billingSettlements.provider,
+        providerPaymentId: billingSettlements.providerPaymentId,
+        providerPayCurrency: billingSettlements.providerPayCurrency,
         amountPaidMinor: billingSettlements.amountPaidMinor,
         currencyPaid: billingSettlements.currencyPaid,
         status: billingSettlements.status,

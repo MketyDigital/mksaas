@@ -31,6 +31,7 @@ export async function POST(request: Request) {
         paymentStatus: 'confirmed',
         checkoutStatus: 'completed',
         providerPaymentReference: event.paymentId,
+        providerPayCurrency: typeof event.raw?.pay_currency === 'string' ? event.raw.pay_currency.toUpperCase() : undefined,
         metadata: { lastProviderStatus: event.paymentStatus },
       });
     } else if (['failed', 'expired', 'refunded'].includes(event.paymentStatus)) {
@@ -39,6 +40,7 @@ export async function POST(request: Request) {
         paymentStatus: 'failed',
         checkoutStatus: 'failed',
         providerPaymentReference: event.paymentId,
+        providerPayCurrency: typeof event.raw?.pay_currency === 'string' ? event.raw.pay_currency.toUpperCase() : undefined,
         metadata: { lastProviderStatus: event.paymentStatus },
       });
     } else {
@@ -47,6 +49,7 @@ export async function POST(request: Request) {
         paymentStatus: 'pending',
         checkoutStatus: 'awaiting_confirmation',
         providerPaymentReference: event.paymentId,
+        providerPayCurrency: typeof event.raw?.pay_currency === 'string' ? event.raw.pay_currency.toUpperCase() : undefined,
         metadata: { lastProviderStatus: event.paymentStatus },
       });
     }

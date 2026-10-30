@@ -1,46 +1,52 @@
 /** @jest-environment node */
 
-const firstEnd = jest.fn().mockResolvedValue(undefined);
-const secondEnd = jest.fn().mockResolvedValue(undefined);
-const firstClient = Object.assign(jest.fn(), { end: firstEnd });
-const secondClient = Object.assign(jest.fn(), { end: secondEnd });
-const mockPostgres = jest.fn().mockReturnValueOnce(firstClient).mockReturnValueOnce(secondClient);
 const firstDb = { request: 1 };
 const secondDb = { request: 2 };
-const mockDrizzle = jest.fn().mockReturnValueOnce(firstDb).mockReturnValueOnce(secondDb);
-const mockRuntimeConnectionString = jest.fn().mockReturnValue('postgresql://runtime.example/mkety');
+const databaseQueue = [firstDb, secondDb];
+const mockWithRequestDatabase = jest.fn(async (work: (database: object) => Promise<unknown>) => {
+  const database = databaseQueue.shift();
+  if (!database) throw new Error('No request database fixture remains.');
+  const { runWithRequestDatabaseContext } = await import('@/shared/db/request-context');
+  return runWithRequestDatabaseContext(database, () => work(database));
+});
+const mockPostgres = jest.fn(() => ({ end: jest.fn().mockResolvedValue(undefined) }));
+const mockDrizzle = jest.fn(() => ({ legacy: true }));
 
-jest.mock('postgres', () => ({
-  __esModule: true,
-  default: (...args: unknown[]) => mockPostgres(...args),
+jest.mock('@/shared/db/request', () => ({
+  withRequestDatabase: (work: (database: object) => Promise<unknown>) => mockWithRequestDatabase(work),
 }));
-
-jest.mock('drizzle-orm/postgres-js', () => ({
-  drizzle: (...args: unknown[]) => mockDrizzle(...args),
-}));
-
+jest.mock('postgres', () => ({ __esModule: true, default: () => mockPostgres() }));
+jest.mock('drizzle-orm/postgres-js', () => ({ drizzle: () => mockDrizzle() }));
 jest.mock('@/shared/db/runtime-connection.cloudflare', () => ({
-  getRuntimeDatabaseConnectionString: () => mockRuntimeConnectionString(),
+  getRuntimeDatabaseConnectionString: () => 'postgresql://runtime.example/mkety',
 }));
+jest.mock('@/shared/db/schema', () => ({}));
 
+import { getRequestDatabaseContext } from '@/shared/db/request-context';
 import { withPublicAIRequestDatabase } from './request-database';
 
 describe('Public Mkety AI request database lifecycle', () => {
-  it('uses the runtime connection resolver for each request and closes the client afterward', async () => {
-    const seen: unknown[] = [];
+  beforeEach(() => {
+    databaseQueue.splice(0, databaseQueue.length, firstDb, secondDb);
+    mockWithRequestDatabase.mockClear();
+    mockPostgres.mockClear();
+    mockDrizzle.mockClear();
+  });
+
+  it('uses the shared request database context for nested provider/config queries', async () => {
+    const seen: Array<{ callbackDatabase: object; contextualDatabase: object | undefined }> = [];
 
     await withPublicAIRequestDatabase(async (database) => {
-      seen.push(database);
+      seen.push({ callbackDatabase: database, contextualDatabase: getRequestDatabaseContext() });
     });
     await withPublicAIRequestDatabase(async (database) => {
-      seen.push(database);
+      seen.push({ callbackDatabase: database, contextualDatabase: getRequestDatabaseContext() });
     });
 
-    expect(seen).toEqual([firstDb, secondDb]);
-    expect(mockRuntimeConnectionString).toHaveBeenCalledTimes(2);
-    expect(mockPostgres).toHaveBeenNthCalledWith(1, 'postgresql://runtime.example/mkety', { max: 1, prepare: false });
-    expect(mockPostgres).toHaveBeenNthCalledWith(2, 'postgresql://runtime.example/mkety', { max: 1, prepare: false });
-    expect(firstEnd).toHaveBeenCalledTimes(1);
-    expect(secondEnd).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual([
+      { callbackDatabase: firstDb, contextualDatabase: firstDb },
+      { callbackDatabase: secondDb, contextualDatabase: secondDb },
+    ]);
+    expect(mockWithRequestDatabase).toHaveBeenCalledTimes(2);
   });
 });

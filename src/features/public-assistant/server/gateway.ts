@@ -1,6 +1,5 @@
 import type {
   PublicAIProviderAdapter,
-  PublicAIProviderError,
   PublicAIProviderRequest,
   PublicAIProviderResponse,
 } from './providers/types';
@@ -18,10 +17,6 @@ export interface PublicAIProviderTarget {
 }
 
 export type PublicAIGatewayRequest = Omit<PublicAIProviderRequest, 'model' | 'signal'>;
-
-function isRetryableProviderError(error: unknown): boolean {
-  return Boolean((error as PublicAIProviderError | undefined)?.retryable);
-}
 
 async function generateWithTimeout(
   target: PublicAIProviderTarget,
@@ -67,7 +62,7 @@ export async function runPublicAIGateway(input: {
       };
     } catch (error) {
       lastError = error;
-      if (!isRetryableProviderError(error) || index === targets.length - 1) throw error;
+      if (index === targets.length - 1) throw error;
     }
   }
 

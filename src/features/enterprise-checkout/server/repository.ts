@@ -24,9 +24,12 @@ export interface EnterpriseOrderRepository {
     paymentStatus: 'pending' | 'confirmed' | 'failed';
     checkoutStatus: 'awaiting_confirmation' | 'completed' | 'failed';
     providerPaymentReference?: string;
+    providerPayCurrency?: string;
     metadata?: Record<string, unknown>;
   }): Promise<PlatformEnterpriseOrder>;
   findById(orderId: string): Promise<PlatformEnterpriseOrder | null>;
+  findByCheckoutTokenHash(tokenHash: string): Promise<PlatformEnterpriseOrder | null>;
+  beginInvoiceCreation(orderId: string, payCurrency: string): Promise<PlatformEnterpriseOrder | null>;
 }
 
 export const enterpriseOrderRepository: EnterpriseOrderRepository = {
@@ -75,6 +78,7 @@ export const enterpriseOrderRepository: EnterpriseOrderRepository = {
         .set({
           paymentStatus: input.paymentStatus,
           checkoutStatus: input.checkoutStatus,
+        providerPayCurrency: input.providerPayCurrency ?? existing.providerPayCurrency,
           providerPaymentReference: input.providerPaymentReference ?? existing.providerPaymentReference,
           metadata: { ...(existing.metadata ?? {}), ...(input.metadata ?? {}) },
           confirmedAt: input.paymentStatus === 'confirmed' ? new Date() : existing.confirmedAt,
@@ -165,5 +169,28 @@ export const enterpriseOrderRepository: EnterpriseOrderRepository = {
         where: eq(platformEnterpriseOrders.id, orderId),
       })) ?? null
     );
+  },
+
+  async findByCheckoutTokenHash(tokenHash) {
+    return (
+      (await db.query.platformEnterpriseOrders.findFirst({
+        where: eq(platformEnterpriseOrders.checkoutTokenHash, tokenHash),
+      })) ?? null
+    );
+  },
+
+  async beginInvoiceCreation(orderId, payCurrency) {
+    return db.transaction(async (tx) => {
+      const [existing] = await tx.select().from(platformEnterpriseOrders)
+        .where(eq(platformEnterpriseOrders.id, orderId)).for('update').limit(1);
+      if (!existing || existing.checkoutStatus !== 'awaiting_payment_selection') return null;
+      const [updated] = await tx.update(platformEnterpriseOrders).set({
+        checkoutStatus: 'invoice_starting',
+        providerPayCurrency: payCurrency,
+        metadata: { ...(existing.metadata ?? {}), selectedPayCurrency: payCurrency },
+        updatedAt: new Date(),
+      }).where(eq(platformEnterpriseOrders.id, orderId)).returning();
+      return updated ?? null;
+    });
   },
 };

@@ -91,7 +91,17 @@ async function renderBillingHome({
           <CardContent className="space-y-3">
             {summary?.recentSettlements.length ? summary.recentSettlements.map((settlement) => (
               <div className="flex items-center justify-between gap-3 rounded-xl border p-3 text-sm" key={settlement.id}>
-                <div><p className="font-medium">{settlement.provider}</p><p className="text-xs text-muted-foreground">{settlement.occurredAt.toLocaleDateString()} · {settlement.status}</p></div>
+                <div>
+                  <p className="font-medium">{settlement.provider}</p>
+                  <p className="text-xs text-muted-foreground">{settlement.occurredAt.toLocaleDateString()} · {settlement.status}</p>
+                  {settlement.provider === 'nowpayments' && (settlement.providerPaymentId || settlement.providerPayCurrency) ? (
+                    <p className="text-xs text-muted-foreground">
+                      {settlement.providerPaymentId ? `Payment ID: ${settlement.providerPaymentId}` : null}
+                      {settlement.providerPaymentId && settlement.providerPayCurrency ? ' · ' : null}
+                      {settlement.providerPayCurrency ? `Network: ${settlement.providerPayCurrency}` : null}
+                    </p>
+                  ) : null}
+                </div>
                 <strong>{money(settlement.amountPaidMinor, settlement.currencyPaid)}</strong>
               </div>
             )) : <p className="text-sm text-muted-foreground">No recent verified settlement is available.</p>}
