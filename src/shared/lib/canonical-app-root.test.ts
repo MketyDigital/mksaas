@@ -20,9 +20,11 @@ describe('canonical customer app root', () => {
 
   it('makes /app the canonical tenant route and permanently redirects legacy /t paths', async () => {
     const proxy = await read('src/proxy.ts');
-    const appEntry = await read('src/app/app/page.tsx');
+    const appEntry = await read('src/app/app/route.ts');
 
-    expect(appEntry).toContain('redirect(`/app/${tenants[0]}`)');
+    expect(appEntry).toContain("return redirectTo(request, `/app/${tenantSlugs[0]}`)");
+    expect(appEntry).toContain("return redirectTo(request, '/login')");
+    expect(appEntry).toContain('Response.redirect(new URL(pathname, request.url), 307)');
     expect(proxy).toContain("if (pathname.startsWith('/t/'))");
     expect(proxy).toContain("pathname.replace(/^\\/t\\//, '/app/')");
     expect(proxy).toContain('NextResponse.redirect(url, 308)');
