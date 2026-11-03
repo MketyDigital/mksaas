@@ -26,6 +26,7 @@ jobs:
       PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
       ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
       SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
+      POSTGRES_UUID: hgxwkiyxgbmb2i3pl57kmxc8
       ACCEPTANCE_RUN_ID: ${{ inputs.confirm_run_id }}
 
     steps:
@@ -43,36 +44,144 @@ jobs:
             -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
             "$base/applications" -o /tmp/apps.json
 
-          node <<'NODE'
+          expected_name="mkety-mail-acceptance-$ACCEPTANCE_RUN_ID"
+          cleanup_name="$expected_name-cleanup"
+          APP_RUN_ID="$ACCEPTANCE_RUN_ID" PROJECT_UUID="$PROJECT_UUID" ENVIRONMENT_UUID="$ENVIRONMENT_UUID" SERVER_UUID="$SERVER_UUID" node <<'NODE'
           const fs=require('node:fs');
           const raw=JSON.parse(fs.readFileSync('/tmp/apps.json','utf8'));
           const apps=Array.isArray(raw)?raw:(Array.isArray(raw.data)?raw.data:[]);
-          const name='mkety-mail-acceptance-36672362451';
+          const name='mkety-mail-acceptance-'+process.env.APP_RUN_ID;
+          const cleanupName=name+'-cleanup';
           const matches=apps.filter(app=>app?.name===name);
-          if(matches.length!==1) throw new Error('Expected exactly one stale synthetic acceptance app; found '+matches.length+'.');
-          const app=matches[0];
-          if(!app.uuid) throw new Error('The stale acceptance app has no UUID.');
-          if(app.project_uuid!==process.env.PROJECT_UUID
-            || app.environment_uuid!==process.env.ENVIRONMENT_UUID
-            || app.server_uuid!==process.env.SERVER_UUID) {
-            throw new Error('The stale acceptance app is outside the guarded project, environment, or server.');
+          const cleanupMatches=apps.filter(app=>app?.name===cleanupName);
+          if(matches.length>1||cleanupMatches.length>1) throw new Error('Multiple exact synthetic acceptance apps exist; refusing cleanup.');
+          if(matches.length===1&&cleanupMatches.length!==0) throw new Error('Both the original and recovery app exist; refusing cleanup.');
+          if(matches.length===0&&cleanupMatches.length===0) {
+            fs.writeFileSync('/tmp/create-recovery-app','true');
+          } else if(matches.length===1) {
+            const app=matches[0];
+            if(!app.uuid) throw new Error('The stale acceptance app has no UUID.');
+            if(app.project_uuid!==process.env.PROJECT_UUID
+              || app.environment_uuid!==process.env.ENVIRONMENT_UUID
+              || app.server_uuid!==process.env.SERVER_UUID) {
+              throw new Error('The stale acceptance app is outside the guarded project, environment, or server.');
+            }
+            if(app.dockerfile_location!=='/ops/mail-gateway-acceptance/Dockerfile'
+              || app.git_branch!=='main'
+              || !String(app.git_repository||'').includes('MketyDigital/mksaas')) {
+              throw new Error('The named app no longer matches the synthetic Mail acceptance app configuration.');
+            }
+            fs.writeFileSync('/tmp/target-app.json',JSON.stringify({uuid:app.uuid,name:app.name}));
+          } else {
+            const app=cleanupMatches[0];
+            if(!app.uuid||app.project_uuid!==process.env.PROJECT_UUID
+              || app.environment_uuid!==process.env.ENVIRONMENT_UUID
+              || app.server_uuid!==process.env.SERVER_UUID
+              || app.dockerfile_location!=='/ops/mail-gateway-acceptance/Dockerfile'
+              || app.git_branch!=='main'
+              || !String(app.git_repository||'').includes('MketyDigital/mksaas')) {
+              throw new Error('The existing recovery app does not match the exact guarded configuration.');
+            }
+            fs.writeFileSync('/tmp/target-app.json',JSON.stringify({uuid:app.uuid,name:app.name}));
           }
-          if(app.dockerfile_location!=='/ops/mail-gateway-acceptance/Dockerfile'
-            || app.git_branch!=='main'
-            || !String(app.git_repository||'').includes('MketyDigital/mksaas')) {
-            throw new Error('The named app no longer matches the synthetic Mail acceptance app configuration.');
-          }
-          fs.writeFileSync('/tmp/target-app.json',JSON.stringify({uuid:app.uuid,name:app.name}));
-          console.log('Exact synthetic acceptance app identity verified.');
           NODE
 
-          app_uuid="$(node -e "process.stdout.write(require('/tmp/target-app.json').uuid)")"
-          echo "::add-mask::$app_uuid"
-          echo "APP_UUID=$app_uuid" >> "$GITHUB_ENV"
+          if [ -f /tmp/create-recovery-app ]; then
+            curl --proto '=https' --tlsv1.2 -fsS \
+              -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+              "$base/databases/$POSTGRES_UUID" -o /tmp/production-db.json
+            DATABASE_URL="$(node <<'NODE'
+          const db=require('/tmp/production-db.json');
+          const healthy=String(db.status||'').toLowerCase().includes('healthy');
+          if(db.is_public!==false||db.enable_ssl!==true||!healthy||!db.internal_db_url) {
+            throw new Error('Private PostgreSQL preflight failed.');
+          }
+          process.stdout.write(String(db.internal_db_url));
+          NODE
+            )"
+            [ -n "$DATABASE_URL" ] || exit 1
+            echo "::add-mask::$DATABASE_URL"
+
+            APP_NAME="$cleanup_name" APP_SHA="$GITHUB_SHA" node <<'NODE' >/tmp/create-app.json
+          process.stdout.write(JSON.stringify({
+            project_uuid:process.env.PROJECT_UUID,
+            server_uuid:process.env.SERVER_UUID,
+            environment_uuid:process.env.ENVIRONMENT_UUID,
+            git_repository:'https://github.com/MketyDigital/mksaas',
+            git_branch:'main',
+            git_commit_sha:process.env.APP_SHA,
+            build_pack:'dockerfile',
+            dockerfile_location:'/ops/mail-gateway-acceptance/Dockerfile',
+            ports_exposes:'3000',
+            name:process.env.APP_NAME,
+            description:'One-time synthetic Mkety Mail fixture cleanup runtime',
+            autogenerate_domain:false,
+            connect_to_docker_network:true,
+            instant_deploy:false,
+            health_check_enabled:true,
+            health_check_path:'/',
+            health_check_port:'3000',
+            limits_cpus:'0.25',
+            limits_memory:'128m',
+            docker_images_to_keep:1,
+            max_restart_count:2
+          }));
+          NODE
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/create-response.json -w '%{http_code}' -X POST \
+              -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' \
+              --data-binary @/tmp/create-app.json "$base/applications/public")"
+            [ "$code" = 201 ] || { echo "Recovery app create failed (HTTP $code)."; exit 1; }
+            recovery_uuid="$(node -e "const x=require('/tmp/create-response.json');if(!x.uuid)process.exit(1);process.stdout.write(x.uuid)")"
+            echo "::add-mask::$recovery_uuid"
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+              "$base/applications/$recovery_uuid" -o /tmp/recovery-app.json
+            APP_UUID="$recovery_uuid" APP_NAME="$cleanup_name" PROJECT_UUID="$PROJECT_UUID" ENVIRONMENT_UUID="$ENVIRONMENT_UUID" SERVER_UUID="$SERVER_UUID" node <<'NODE'
+          const fs=require('node:fs');
+          const app=JSON.parse(fs.readFileSync('/tmp/recovery-app.json','utf8'));
+          if(app.uuid!==process.env.APP_UUID||app.name!==process.env.APP_NAME
+            ||app.project_uuid!==process.env.PROJECT_UUID
+            ||app.environment_uuid!==process.env.ENVIRONMENT_UUID
+            ||app.server_uuid!==process.env.SERVER_UUID
+            ||app.dockerfile_location!=='/ops/mail-gateway-acceptance/Dockerfile'
+            ||app.git_branch!=='main'
+            ||!String(app.git_repository||'').includes('MketyDigital/mksaas')) {
+            throw new Error('The newly created recovery app failed exact identity validation.');
+          }
+          NODE
+            endpoint="$base/applications/$recovery_uuid/envs"
+            upsert_env() {
+              key="$1"; value="$2"
+              KEY="$key" VALUE="$value" node <<'NODE' >/tmp/recovery-env.json
+          process.stdout.write(JSON.stringify({
+            key:process.env.KEY,value:process.env.VALUE,is_preview:false,
+            is_literal:true,is_multiline:false,is_shown_once:true
+          }));
+          NODE
+              curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+                "$endpoint" -o /tmp/recovery-envs.json
+              exists="$(KEY="$key" node -e "const x=require('/tmp/recovery-envs.json');process.stdout.write(Array.isArray(x)&&x.some(v=>v?.key===process.env.KEY)?'true':'false')")"
+              method=POST; [ "$exists" = true ] && method=PATCH
+              code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/recovery-env-response.json -w '%{http_code}' -X "$method" \
+                -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' \
+                --data-binary @/tmp/recovery-env.json "$endpoint")"
+              [ "$code" = 201 ] || { echo "Recovery app environment setup failed for $key (HTTP $code)."; exit 1; }
+            }
+            upsert_env DATABASE_URL "$DATABASE_URL"
+            upsert_env MKETY_MAIL_ACCEPTANCE_MODE cleanup
+            upsert_env MKETY_MAIL_ACCEPTANCE_RUN_ID "$ACCEPTANCE_RUN_ID"
+            node -e "const x=require('/tmp/recovery-app.json');require('node:fs').writeFileSync('/tmp/target-app.json',JSON.stringify({uuid:x.uuid,name:x.name}))"
+            echo 'No original app exists; a temporary cleanup-only runtime was created.'
+          fi
+
+          target_uuid="$(node -e "process.stdout.write(require('/tmp/target-app.json').uuid)")"
+          target_name="$(node -e "process.stdout.write(require('/tmp/target-app.json').name)")"
+          echo "::add-mask::$target_uuid"
+          echo "APP_UUID=$target_uuid" >> "$GITHUB_ENV"
+          echo "APP_NAME=$target_name" >> "$GITHUB_ENV"
 
           curl --proto '=https' --tlsv1.2 -fsS \
             -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-            "$base/applications/$app_uuid/envs" -o /tmp/app-envs.json
+            "$base/applications/$target_uuid/envs" -o /tmp/app-envs.json
           APP_RUN_ID="$ACCEPTANCE_RUN_ID" node <<'NODE'
           const fs=require('node:fs');
           const rows=JSON.parse(fs.readFileSync('/tmp/app-envs.json','utf8'));
@@ -157,7 +266,7 @@ jobs:
           APP_UUID="$target_uuid" node <<'NODE'
           const fs=require('node:fs');
           const app=JSON.parse(fs.readFileSync('/tmp/app-before-delete.json','utf8'));
-          if(app.uuid!==process.env.APP_UUID||app.name!=='mkety-mail-acceptance-36672362451') {
+          if(app.uuid!==process.env.APP_UUID||app.name!==process.env.APP_NAME) {
             throw new Error('The app identity changed before deletion; refusing to delete.');
           }
           NODE
@@ -172,7 +281,7 @@ jobs:
           const fs=require('node:fs');
           const raw=JSON.parse(fs.readFileSync('/tmp/apps-after.json','utf8'));
           const apps=Array.isArray(raw)?raw:(Array.isArray(raw.data)?raw.data:[]);
-          if(apps.some(app=>app?.name==='mkety-mail-acceptance-36672362451')) {
+          if(apps.some(app=>app?.uuid===process.env.APP_UUID||app?.name===process.env.APP_NAME)) {
             throw new Error('The stale synthetic acceptance app remains after deletion.');
           }
           console.log('STALE_MAIL_ACCEPTANCE_FIXTURE_CLEANUP_CONFIRMED=true');
