@@ -74,10 +74,15 @@ jobs:
             fs.writeFileSync('/tmp/target-app.json',JSON.stringify({uuid:app.uuid,name:app.name}));
           } else {
             const app=cleanupMatches[0];
-            if(!app.uuid||app.project_uuid!==process.env.PROJECT_UUID
-              || app.environment_uuid!==process.env.ENVIRONMENT_UUID
-              || app.server_uuid!==process.env.SERVER_UUID
+            // Coolify's documented application list omits project_uuid, environment_uuid,
+            // and server_uuid. Identify the exact recovery app by the immutable metadata
+            // written by the guarded create request and its known dispatch commit.
+            if(!app.uuid||app.name!==cleanupName
+              || app.description!=='One-time synthetic Mkety Mail fixture cleanup runtime'
+              || app.git_commit_sha!=='c28dd028030b0b26134fbd45c61bb63e801d7632'
+              || app.build_pack!=='dockerfile'
               || app.dockerfile_location!=='/ops/mail-gateway-acceptance/Dockerfile'
+              || app.ports_exposes!=='3000'
               || app.git_branch!=='main'
               || !String(app.git_repository||'').includes('MketyDigital/mksaas')) {
               throw new Error('The existing recovery app does not match the exact guarded configuration.');
@@ -135,14 +140,18 @@ jobs:
             echo "::add-mask::$recovery_uuid"
             curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
               "$base/applications/$recovery_uuid" -o /tmp/recovery-app.json
-            APP_UUID="$recovery_uuid" APP_NAME="$cleanup_name" PROJECT_UUID="$PROJECT_UUID" ENVIRONMENT_UUID="$ENVIRONMENT_UUID" SERVER_UUID="$SERVER_UUID" node <<'NODE'
+            APP_UUID="$recovery_uuid" APP_NAME="$cleanup_name" APP_SHA="$GITHUB_SHA" node <<'NODE'
           const fs=require('node:fs');
           const app=JSON.parse(fs.readFileSync('/tmp/recovery-app.json','utf8'));
+          // The create request above binds this UUID to the guarded project, environment,
+          // and server. Coolify's GET response exposes the app fields checked here, not
+          // those three UUID fields.
           if(app.uuid!==process.env.APP_UUID||app.name!==process.env.APP_NAME
-            ||app.project_uuid!==process.env.PROJECT_UUID
-            ||app.environment_uuid!==process.env.ENVIRONMENT_UUID
-            ||app.server_uuid!==process.env.SERVER_UUID
+            ||app.description!=='One-time synthetic Mkety Mail fixture cleanup runtime'
+            ||app.git_commit_sha!==process.env.APP_SHA
+            ||app.build_pack!=='dockerfile'
             ||app.dockerfile_location!=='/ops/mail-gateway-acceptance/Dockerfile'
+            ||app.ports_exposes!=='3000'
             ||app.git_branch!=='main'
             ||!String(app.git_repository||'').includes('MketyDigital/mksaas')) {
             throw new Error('The newly created recovery app failed exact identity validation.');
