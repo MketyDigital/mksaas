@@ -66,8 +66,8 @@ jobs:
             echo 'Accepted gateway SHA is not an ancestor of the acceptance runtime on main.'
             exit 1
           }
-          # Keep this acceptance diff guard scoped to runtime paths; read-only audit and docs carry no deployed code.
-          unexpected="$(git diff --name-only "$gateway_sha" "$source_sha" | grep -Ev '^(\.github/workflows/mkety-mail-gateway-functional-acceptance\.yml$|\.github/workflows/mkety-app-domain-readonly-audit\.yml$|ops/mail-gateway-acceptance/|src/features/mail/server/mail-gateway-production-contract\.test\.ts$|docs/)' || true)"
+          # Keep the Mail acceptance diff guard scoped; allow only the exact audited Mkety Apps router files outside Mail.
+          unexpected="$(git diff --name-only "$gateway_sha" "$source_sha" | grep -Ev '^(\.github/workflows/mkety-mail-gateway-functional-acceptance\.yml$|\.github/workflows/mkety-app-domain-readonly-audit\.yml$|ops/mail-gateway-acceptance/|src/features/mail/server/mail-gateway-production-contract\.test\.ts$|src/features/deploy/mkety-app-router\\.test\\.ts$|workers/mkety-app-router/src/index\\.ts$|docs/)' || true)"
           [ -z "$unexpected" ] || {
             echo 'Unaccepted production changes exist after the latest successful gateway SHA:'
             printf '%s\n' "$unexpected"
