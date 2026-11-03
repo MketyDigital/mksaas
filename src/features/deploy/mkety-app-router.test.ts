@@ -25,9 +25,10 @@ describe('Mkety app customer dispatch router', () => {
     const response = await appRouter.fetch(new Request('https://mkety.app/'), env);
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toContain('text/html');
-    expect(await response.text()).toContain('Mkety Platform');
-    expect(await response.text()).toContain('https://mkety.com');
-    expect(await response.text()).toContain('https://app.mkety.com');
+    const html = await response.text();
+    expect(html).toContain('Mkety Platform');
+    expect(html).toContain('https://mkety.com');
+    expect(html).toContain('https://app.mkety.com');
     expect(global.fetch).not.toHaveBeenCalled();
     expect(dispatcher.get).not.toHaveBeenCalled();
   });
