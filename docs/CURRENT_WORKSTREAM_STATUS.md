@@ -1,7 +1,7 @@
 # Current Repository Workstream Status
 
 **Updated:** 2026-11-03  
-**Verified main:** `faa1b7c61a1979e03d9ba07a9597586620bbfc88`
+**Verified main:** `4ef57bc8dc3145a895ee70834ecb714260667348`
 
 ## Current production truth
 
@@ -33,7 +33,7 @@ PR #478 merged as `faa1b7c61a1979e03d9ba07a9597586620bbfc88`; the apex response 
 ## Mail acceptance and remaining gates
 
 - Mail acceptance run #54 stopped in preflight at the source-diff guard before creating a synthetic fixture or ephemeral app; no production Mail state changed.
-- PR #477 fixes the allowlist for the read-only domain audit and makes cleanup a no-op only when neither fixture nor ephemeral app was created. After it merges, rerun Mail acceptance and confirm cleanup. A 401 for synthetic customer credentials while external clients are disabled is expected fail-closed behavior, not proof of customer SMTP service.
+- PR #477 merged as `4ef57bc8dc3145a895ee70834ecb714260667348`. It allows the exact read-only domain audit in the source-diff guard and treats cleanup as a no-op only when preflight fails before app provisioning is attempted. Verify the post-merge acceptance run and fixture cleanup before calling Mail gateway acceptance complete. A 401 for synthetic customer credentials while external clients are disabled is expected fail-closed behavior, not proof of customer SMTP service.
 - Complete first-party sending-domain authentication, then run a non-activating first-party SMTP authentication/delivery/receipt check. Keep external customer clients disabled until their separate live TLS/authentication/delivery gate passes.
 
 ## Other completed work
