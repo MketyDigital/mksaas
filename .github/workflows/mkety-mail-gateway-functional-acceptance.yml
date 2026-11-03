@@ -66,7 +66,8 @@ jobs:
             echo 'Accepted gateway SHA is not an ancestor of the acceptance runtime on main.'
             exit 1
           }
-          unexpected="$(git diff --name-only "$gateway_sha" "$source_sha" | grep -Ev '^(\.github/workflows/mkety-mail-gateway-functional-acceptance\.yml$|ops/mail-gateway-acceptance/|src/features/mail/server/mail-gateway-production-contract\.test\.ts$)' || true)"
+          # Keep this acceptance diff guard scoped to runtime paths; read-only audit and docs carry no deployed code.
+          unexpected="$(git diff --name-only "$gateway_sha" "$source_sha" | grep -Ev '^(\.github/workflows/mkety-mail-gateway-functional-acceptance\.yml$|\.github/workflows/mkety-app-domain-readonly-audit\.yml$|ops/mail-gateway-acceptance/|src/features/mail/server/mail-gateway-production-contract\.test\.ts$|docs/)' || true)"
           [ -z "$unexpected" ] || {
             echo 'Unaccepted production changes exist after the latest successful gateway SHA:'
             printf '%s\n' "$unexpected"
@@ -568,11 +569,18 @@ jobs:
         shell: bash
         env:
           APP_UUID: ${{ steps.app.outputs.app_uuid }}
+          FIXTURE_OUTCOME: ${{ steps.fixture.outcome }}
+          APP_OUTCOME: ${{ steps.app.outcome }}
         run: |
           set +e
           base="${COOLIFY_URL%/}/api/v1"
           cleanup_confirmed=false
           delete_confirmed=false
+          if [ -z "${APP_UUID:-}" ] && [ "$FIXTURE_OUTCOME" = failure ] && [ "$APP_OUTCOME" = skipped ]; then
+            cleanup_confirmed=true
+            delete_confirmed=true
+            echo 'No synthetic fixture or ephemeral app was created; no-op cleanup confirmed.'
+          fi
           if [ -n "${APP_UUID:-}" ]; then
             endpoint="$base/applications/$APP_UUID/envs"
             KEY='MKETY_MAIL_ACCEPTANCE_MODE' VALUE='cleanup' node <<'NODE' >/tmp/cleanup-env.json
