@@ -568,11 +568,18 @@ jobs:
         shell: bash
         env:
           APP_UUID: ${{ steps.app.outputs.app_uuid }}
+          FIXTURE_OUTCOME: ${{ steps.fixture.outcome }}
+          APP_OUTCOME: ${{ steps.app.outcome }}
         run: |
           set +e
           base="${COOLIFY_URL%/}/api/v1"
           cleanup_confirmed=false
           delete_confirmed=false
+          if [ -z "${APP_UUID:-}" ] && [ "$FIXTURE_OUTCOME" = failure ] && [ "$APP_OUTCOME" != success ]; then
+            cleanup_confirmed=true
+            delete_confirmed=true
+            echo 'No synthetic fixture or ephemeral app was created; no-op cleanup confirmed.'
+          fi
           if [ -n "${APP_UUID:-}" ]; then
             endpoint="$base/applications/$APP_UUID/envs"
             KEY='MKETY_MAIL_ACCEPTANCE_MODE' VALUE='cleanup' node <<'NODE' >/tmp/cleanup-env.json
