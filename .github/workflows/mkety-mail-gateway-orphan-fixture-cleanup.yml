@@ -92,8 +92,8 @@ jobs:
         run: |
           set -euo pipefail
           base="${COOLIFY_URL%/}/api/v1"
-          app_uuid="$APP_UUID"
-          endpoint="$base/applications/$app_uuid/envs"
+          target_uuid="$APP_UUID"
+          endpoint="$base/applications/$target_uuid/envs"
 
           KEY='MKETY_MAIL_ACCEPTANCE_MODE' VALUE='cleanup' node <<'NODE' >/tmp/cleanup-env.json
           process.stdout.write(JSON.stringify({
@@ -112,7 +112,7 @@ jobs:
 
           code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}' \
             -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-            "$base/deploy?uuid=$app_uuid&force=true")"
+            "$base/deploy?uuid=$target_uuid&force=true")"
           [ "$code" = 200 ] || { echo "Could not start the cleanup deployment (HTTP $code)."; exit 1; }
           deployment_uuid="$(node -e "const x=require('/tmp/deploy.json');const d=Array.isArray(x.deployments)?x.deployments[0]:null;if(!d?.deployment_uuid)process.exit(1);process.stdout.write(d.deployment_uuid)")"
 
@@ -134,7 +134,7 @@ jobs:
           cleaned=false
           for i in $(seq 1 60); do
             curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-              "$base/applications/$app_uuid/logs?lines=300&show_timestamps=false" -o /tmp/cleanup-logs.json || true
+              "$base/applications/$target_uuid/logs?lines=300&show_timestamps=false" -o /tmp/cleanup-logs.json || true
             if node <<'NODE'
           const fs=require('node:fs');
           try {
@@ -153,8 +153,8 @@ jobs:
 
           # Re-read exact identity immediately before deleting the ephemeral app.
           curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
-            "$base/applications/$app_uuid" -o /tmp/app-before-delete.json
-          APP_UUID="$app_uuid" node <<'NODE'
+            "$base/applications/$target_uuid" -o /tmp/app-before-delete.json
+          APP_UUID="$target_uuid" node <<'NODE'
           const fs=require('node:fs');
           const app=JSON.parse(fs.readFileSync('/tmp/app-before-delete.json','utf8'));
           if(app.uuid!==process.env.APP_UUID||app.name!=='mkety-mail-acceptance-36672362451') {
@@ -163,7 +163,7 @@ jobs:
           NODE
 
           code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/delete-response.json -w '%{http_code}' \
-            -X DELETE -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$app_uuid")"
+            -X DELETE -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$target_uuid")"
           case "$code" in 200|204) ;; *) echo "Ephemeral app deletion failed (HTTP $code)."; exit 1 ;; esac
 
           curl --proto '=https' --tlsv1.2 -fsS \
