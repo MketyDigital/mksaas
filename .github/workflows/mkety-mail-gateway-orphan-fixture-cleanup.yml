@@ -74,10 +74,15 @@ jobs:
             fs.writeFileSync('/tmp/target-app.json',JSON.stringify({uuid:app.uuid,name:app.name}));
           } else {
             const app=cleanupMatches[0];
-            if(!app.uuid||app.project_uuid!==process.env.PROJECT_UUID
-              || app.environment_uuid!==process.env.ENVIRONMENT_UUID
-              || app.server_uuid!==process.env.SERVER_UUID
+            // Coolify's documented application list omits project_uuid, environment_uuid,
+            // and server_uuid. Identify the exact recovery app by the immutable metadata
+            // written by the guarded create request and its known dispatch commit.
+            if(!app.uuid||app.name!==cleanupName
+              || app.description!=='One-time synthetic Mkety Mail fixture cleanup runtime'
+              || app.git_commit_sha!=='c28dd028030b0b26134fbd45c61bb63e801d7632'
+              || app.build_pack!=='dockerfile'
               || app.dockerfile_location!=='/ops/mail-gateway-acceptance/Dockerfile'
+              || app.ports_exposes!=='3000'
               || app.git_branch!=='main'
               || !String(app.git_repository||'').includes('MketyDigital/mksaas')) {
               throw new Error('The existing recovery app does not match the exact guarded configuration.');
@@ -135,14 +140,18 @@ jobs:
             echo "::add-mask::$recovery_uuid"
             curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
               "$base/applications/$recovery_uuid" -o /tmp/recovery-app.json
-            APP_UUID="$recovery_uuid" APP_NAME="$cleanup_name" PROJECT_UUID="$PROJECT_UUID" ENVIRONMENT_UUID="$ENVIRONMENT_UUID" SERVER_UUID="$SERVER_UUID" node <<'NODE'
+            APP_UUID="$recovery_uuid" APP_NAME="$cleanup_name" APP_SHA="$GITHUB_SHA" node <<'NODE'
           const fs=require('node:fs');
           const app=JSON.parse(fs.readFileSync('/tmp/recovery-app.json','utf8'));
+          // The create request above binds this UUID to the guarded project, environment,
+          // and server. Coolify's GET response exposes the app fields checked here, not
+          // those three UUID fields.
           if(app.uuid!==process.env.APP_UUID||app.name!==process.env.APP_NAME
-            ||app.project_uuid!==process.env.PROJECT_UUID
-            ||app.environment_uuid!==process.env.ENVIRONMENT_UUID
-            ||app.server_uuid!==process.env.SERVER_UUID
+            ||app.description!=='One-time synthetic Mkety Mail fixture cleanup runtime'
+            ||app.git_commit_sha!==process.env.APP_SHA
+            ||app.build_pack!=='dockerfile'
             ||app.dockerfile_location!=='/ops/mail-gateway-acceptance/Dockerfile'
+            ||app.ports_exposes!=='3000'
             ||app.git_branch!=='main'
             ||!String(app.git_repository||'').includes('MketyDigital/mksaas')) {
             throw new Error('The newly created recovery app failed exact identity validation.');
@@ -174,6 +183,59 @@ jobs:
           fi
 
           target_uuid="$(node -e "process.stdout.write(require('/tmp/target-app.json').uuid)")"
+          curl --proto '=https' --tlsv1.2 -fsS \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            "$base/applications/$target_uuid/envs" -o /tmp/target-envs.json
+          APP_RUN_ID="$ACCEPTANCE_RUN_ID" node <<'NODE'
+          const fs=require('node:fs');
+          const rows=JSON.parse(fs.readFileSync('/tmp/target-envs.json','utf8'));
+          const envs=Array.isArray(rows)?rows:[];
+          const runEnv=envs.find(row=>row?.key==='MKETY_MAIL_ACCEPTANCE_RUN_ID');
+          if(runEnv?.value && String(runEnv.value)!==process.env.APP_RUN_ID) {
+            throw new Error('The recovery app has a different acceptance run ID; refusing to change it.');
+          }
+          if(!envs.some(row=>row?.key==='DATABASE_URL')||!runEnv) {
+            fs.writeFileSync('/tmp/repair-recovery-env','true');
+          }
+          NODE
+
+          if [ -f /tmp/repair-recovery-env ]; then
+            curl --proto '=https' --tlsv1.2 -fsS \
+              -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+              "$base/databases/$POSTGRES_UUID" -o /tmp/production-db.json
+            DATABASE_URL="$(node <<'NODE'
+          const db=require('/tmp/production-db.json');
+          const healthy=String(db.status||'').toLowerCase().includes('healthy');
+          if(db.is_public!==false||db.enable_ssl!==true||!healthy||!db.internal_db_url) {
+            throw new Error('Private PostgreSQL preflight failed.');
+          }
+          process.stdout.write(String(db.internal_db_url));
+          NODE
+            )"
+            [ -n "$DATABASE_URL" ] || exit 1
+            echo "::add-mask::$DATABASE_URL"
+            endpoint="$base/applications/$target_uuid/envs"
+            upsert_recovery_env() {
+              key="$1"; value="$2"
+              KEY="$key" VALUE="$value" node <<'NODE' >/tmp/recovery-env.json
+          process.stdout.write(JSON.stringify({
+            key:process.env.KEY,value:process.env.VALUE,is_preview:false,
+            is_literal:true,is_multiline:false,is_shown_once:true
+          }));
+          NODE
+              curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+                "$endpoint" -o /tmp/recovery-envs.json
+              exists="$(KEY="$key" node -e "const x=require('/tmp/recovery-envs.json');process.stdout.write(Array.isArray(x)&&x.some(v=>v?.key===process.env.KEY)?'true':'false')")"
+              method=POST; [ "$exists" = true ] && method=PATCH
+              code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/recovery-env-response.json -w '%{http_code}' -X "$method" \
+                -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' \
+                --data-binary @/tmp/recovery-env.json "$endpoint")"
+              [ "$code" = 201 ] || { echo "Recovery app environment setup failed for $key (HTTP $code)."; exit 1; }
+            }
+            upsert_recovery_env DATABASE_URL "$DATABASE_URL"
+            upsert_recovery_env MKETY_MAIL_ACCEPTANCE_MODE cleanup
+            upsert_recovery_env MKETY_MAIL_ACCEPTANCE_RUN_ID "$ACCEPTANCE_RUN_ID"
+          fi
           target_name="$(node -e "process.stdout.write(require('/tmp/target-app.json').name)")"
           echo "::add-mask::$target_uuid"
           echo "APP_UUID=$target_uuid" >> "$GITHUB_ENV"
