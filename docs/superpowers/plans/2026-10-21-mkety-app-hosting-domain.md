@@ -4,7 +4,7 @@
 
 **Goal:** Make `mkety.app` the Mkety-controlled base hostname for customer applications and previews, with safe single-label deployment URLs under `*.mkety.app`.
 
-**Architecture:** Keep the authenticated Platform Worker separate from customer code. Use a dedicated Cloudflare Workers for Platforms dispatch namespace plus a hostname-aware dispatch Worker, backed by tenant-owned deployment hostname records. The apex serves the Mkety Apps service response; wildcard hostnames dispatch only to their verified deployment.
+**Architecture:** Keep the authenticated Platform Worker separate from customer code. Use a dedicated Cloudflare Workers for Platforms dispatch namespace plus a hostname-aware dispatch Worker, backed by tenant-owned deployment hostname records. The apex serves the Mkety Apps service response; customer hostnames remain single-label names under the zone and are attached/routed individually only after ownership and collision checks.
 
 **Tech Stack:** Cloudflare Workers for Platforms, Workers/Worker Routes, PostgreSQL + Drizzle, GitHub Actions, TypeScript.
 
@@ -16,12 +16,12 @@
 - `mkety.app` is the platform base endpoint; customer previews/deployments use collision-safe single-label `*.mkety.app` hostnames.
 - Unknown, suspended, expired, or cross-tenant host mappings fail closed and never fall back to another customer.
 - Customer Workers stay isolated in a Workers for Platforms dispatch namespace.
-- Production DNS, wildcard routing, and TLS are attached only after isolated validation and rollback preparation.
+- Production apex and exact customer-host DNS/domain attachments are made only after isolated validation and rollback preparation. Never add a broad wildcard route that overlaps existing siblings.
 - No generic public-site cutover workflow is used for customer host setup.
 
 ## Review Focus
 
-- Unknown host or DNS wildcard collision — return the branded apex or a safe not-found response.
+- Existing sibling hostname collision — preserve Assist, Media/customer, and Pages routes; return a safe not-found response for unowned names.
 - Stale deployment mapping — serve no old customer code after suspension/deletion.
 - Cross-tenant hostname collision — database uniqueness and ownership tests reject it.
 - Unsafe Worker dispatch identifier — allow only identifiers created by Mkety, never a request-controlled script name.
@@ -112,8 +112,9 @@
 - Modify: `docs/MKETY_DOMAIN_ARCHITECTURE.md`
 - Create: `.github/workflows/mkety-app-domain-readiness.yml` only if a read-only diagnostic workflow is needed.
 
-- [ ] **Step 1: Verify read-only** that `mkety.app` zone, Workers for Platforms access, dispatch namespace, apex routing, wildcard DNS, certificates, and existing Worker Routes are understood.
-- [ ] **Step 2: Configure isolated staging hostnames** and run an external smoke for apex, wildcard dispatch, invalid host, HTTPS, and customer isolation.
-- [ ] **Step 3: Prepare exact rollback evidence** for the apex custom domain and wildcard DNS/Worker Route before production attachment.
-- [ ] **Step 4: Attach apex and wildcard routing** to the new customer dispatch Worker, preserve unrelated routing/DNS, and verify the before/after set.
-- [ ] **Step 5: Mark `mkety.app` customer hosting operational only after real customer build, preview, promotion, TLS, isolation, and rollback checks pass.**
+- [x] **Step 1a: Inventory the zone read-only.** Audit #2 (2026-11-03) confirms the active zone, current DNS/Worker routes/domains, absent apex record, and the existing Assist/Media/customer/Pages siblings. TXT values were redacted.
+- [ ] **Step 1b: Resolve Cloudflare access and bindings.** The configured token received HTTP 403 for the dispatch namespace; `mkety-app-router` is absent; `mkety-platform` lacks `MKETY_DEPLOYMENT_LOOKUP_SECRET`. Do not proceed until namespace access/provisioning and the shared lookup-secret binding are verified.
+- [ ] **Step 2: Configure isolated staging hostnames** and smoke the apex, one individually attached customer hostname, invalid hostname, HTTPS, and customer isolation.
+- [ ] **Step 3: Prepare exact rollback evidence** for the apex custom domain and each exact customer hostname attachment. Do not create a general wildcard DNS record or Worker Route.
+- [ ] **Step 4: Attach only the exact `mkety.app` apex and individually verified customer hostnames** to the router; compare DNS/Worker domains/routes before and after and confirm existing Assist, Media/customer, and Pages hostnames are unchanged.
+- [ ] **Step 5: Mark customer hosting operational only after** a real customer build, preview, promotion, TLS, isolation, and rollback checks pass.
