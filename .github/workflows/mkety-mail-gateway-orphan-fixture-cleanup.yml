@@ -183,6 +183,59 @@ jobs:
           fi
 
           target_uuid="$(node -e "process.stdout.write(require('/tmp/target-app.json').uuid)")"
+          curl --proto '=https' --tlsv1.2 -fsS \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            "$base/applications/$target_uuid/envs" -o /tmp/target-envs.json
+          APP_RUN_ID="$ACCEPTANCE_RUN_ID" node <<'NODE'
+          const fs=require('node:fs');
+          const rows=JSON.parse(fs.readFileSync('/tmp/target-envs.json','utf8'));
+          const envs=Array.isArray(rows)?rows:[];
+          const runEnv=envs.find(row=>row?.key==='MKETY_MAIL_ACCEPTANCE_RUN_ID');
+          if(runEnv?.value && String(runEnv.value)!==process.env.APP_RUN_ID) {
+            throw new Error('The recovery app has a different acceptance run ID; refusing to change it.');
+          }
+          if(!envs.some(row=>row?.key==='DATABASE_URL')||!runEnv) {
+            fs.writeFileSync('/tmp/repair-recovery-env','true');
+          }
+          NODE
+
+          if [ -f /tmp/repair-recovery-env ]; then
+            curl --proto '=https' --tlsv1.2 -fsS \
+              -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+              "$base/databases/$POSTGRES_UUID" -o /tmp/production-db.json
+            DATABASE_URL="$(node <<'NODE'
+          const db=require('/tmp/production-db.json');
+          const healthy=String(db.status||'').toLowerCase().includes('healthy');
+          if(db.is_public!==false||db.enable_ssl!==true||!healthy||!db.internal_db_url) {
+            throw new Error('Private PostgreSQL preflight failed.');
+          }
+          process.stdout.write(String(db.internal_db_url));
+          NODE
+            )"
+            [ -n "$DATABASE_URL" ] || exit 1
+            echo "::add-mask::$DATABASE_URL"
+            endpoint="$base/applications/$target_uuid/envs"
+            upsert_recovery_env() {
+              key="$1"; value="$2"
+              KEY="$key" VALUE="$value" node <<'NODE' >/tmp/recovery-env.json
+          process.stdout.write(JSON.stringify({
+            key:process.env.KEY,value:process.env.VALUE,is_preview:false,
+            is_literal:true,is_multiline:false,is_shown_once:true
+          }));
+          NODE
+              curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+                "$endpoint" -o /tmp/recovery-envs.json
+              exists="$(KEY="$key" node -e "const x=require('/tmp/recovery-envs.json');process.stdout.write(Array.isArray(x)&&x.some(v=>v?.key===process.env.KEY)?'true':'false')")"
+              method=POST; [ "$exists" = true ] && method=PATCH
+              code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/recovery-env-response.json -w '%{http_code}' -X "$method" \
+                -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' \
+                --data-binary @/tmp/recovery-env.json "$endpoint")"
+              [ "$code" = 201 ] || { echo "Recovery app environment setup failed for $key (HTTP $code)."; exit 1; }
+            }
+            upsert_recovery_env DATABASE_URL "$DATABASE_URL"
+            upsert_recovery_env MKETY_MAIL_ACCEPTANCE_MODE cleanup
+            upsert_recovery_env MKETY_MAIL_ACCEPTANCE_RUN_ID "$ACCEPTANCE_RUN_ID"
+          fi
           target_name="$(node -e "process.stdout.write(require('/tmp/target-app.json').name)")"
           echo "::add-mask::$target_uuid"
           echo "APP_UUID=$target_uuid" >> "$GITHUB_ENV"
