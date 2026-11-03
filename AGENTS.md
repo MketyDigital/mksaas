@@ -4102,3 +4102,15 @@ This section is the current operational authority for the active Mkety current-t
 - Assist remains a separate production application with separate runtime, controls, customer data, and ledger. Share the provider/model catalog contract only; do not couple Assist to Platform credentials, database context, or billing ledger.
 - New Drizzle migrations on this branch are ordered 0044 Public provider consolidation, 0045 deployment hostnames, 0046 Enterprise NOWPayments checkout token, and 0047 NOWPayments network evidence. Keep journal/snapshot ordering consistent and do not apply production migrations as part of branch implementation.
 - Required implementation plans are in `docs/superpowers/plans/`. Treat local focused tests/typecheck/migration-baseline checks as code evidence only; production binding, DNS, payment, and exact-head CI acceptance are separate gates.
+
+
+# 2026-11-03 Current Operations Override
+
+This is the newest operational authority and supersedes older dated deployment snapshots in this file. The evidence-backed status is in `docs/CURRENT_WORKSTREAM_STATUS.md`.
+
+- The `mkety.com` public cutover is complete. Routine code changes do not use `CUTOVER MKETY PUBLIC`.
+- Public AI is live; Public and Workspace AI use the central approved provider/model catalog while keeping their routing/policies independent of Enterprise customer inference. Keep Enterprise customer inference OFF.
+- Mail Production #115 and gateway run #59 succeeded; SPF/DKIM/DMARC and first-party SMTP acceptance remain pending. Keep `MKETY_MAIL_EXTERNAL_CLIENTS_ENABLED=false`.
+- `mkety.app` zone audit #2 found existing Assist, Media/customer, and Pages siblings, no apex record, and no general wildcard Worker Route. Do not add a broad wildcard or alter those siblings. The router Worker is absent, dispatch namespace read returned HTTP 403, and the platform lookup-secret binding is missing; domain routing is not live.
+- Assist production remains separate. Do not edit or deploy Assist as part of the above work.
+- Treat the lower dated continuation sections as historical evidence unless reverified against fresh main and production workflow results.

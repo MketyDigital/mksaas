@@ -1,10 +1,24 @@
-# 2026-10-23 Repository Continuation Authority
+# 2026-11-03 Current Continuation Authority
+
+This section supersedes the dated notes below. Use `docs/CURRENT_WORKSTREAM_STATUS.md` as the concise evidence-backed source of truth; the older sections are historical and must not be treated as the next task without revalidation.
+
+- `CUTOVER MKETY PUBLIC` was completed previously. Do not run it for routine edits.
+- Public AI and the central provider/model runtime are live; Workspace AI remains independent of the Enterprise customer inference switch. Enterprise customer inference stays **OFF**.
+- Mail Production #115 and gateway run #59 succeeded. First-party sending-domain SPF/DKIM/DMARC and a real first-party SMTP acceptance are still pending. `MKETY_MAIL_EXTERNAL_CLIENTS_ENABLED=false`; customer IMAP/SMTP remains disabled.
+- `mkety.app` audit #2 was read-only. Existing Assist, Media/customer, and Pages hostnames are listed in the current status doc and must be preserved. There is no apex DNS/Worker-domain attachment, no deployed customer router, and no general wildcard Worker route.
+- Cloudflare returned HTTP 403 when the configured audit token read the Workers for Platforms dispatch namespace; `mkety-platform` also lacks the `MKETY_DEPLOYMENT_LOOKUP_SECRET` binding. Resolve those prerequisites before deploying the customer router or attaching hostnames. Never add a broad wildcard that can capture existing siblings.
+- Assist remains a separate production runtime/data/control boundary. This work made no Assist source or deployment changes.
+- Mail synthetic acceptance run `36672362451` left its reserved `.mkety.invalid` workspace behind. The original Coolify app is absent; cleanup run `41557060095` failed closed before mutation. PR #482 merged a guarded temporary-app recovery, which still must be dispatched and verified before this fixture is marked clean.
+
+---
+
+# Archived: 2026-10-23 Repository Continuation Authority
 
 The public `mkety.com` cutover was completed previously. This workstream does not require repeating `CUTOVER MKETY PUBLIC` for routine product and documentation changes. The current implementation plan and evidence are in `docs/CURRENT_WORKSTREAM_STATUS.md`.
 
 Current target topology: `app.mkety.com` is the authenticated Platform; `mkety.app` is the branded customer app/preview endpoint with isolated verified `*.mkety.app` customer deployments. The central Mkety provider/model catalog, encrypted provider connections, and Workers AI binding are shared by Public AI and Workspace AI while each surface retains independent routing and policy. Enterprise AI off must not disable them. Assist remains a separate application/runtime/data/payment-ledger boundary and shares only the versioned provider/model contract.
 
-This repository branch is implementing current-state docs, shared AI runtime parity, `mkety.app` customer hosting, and NowPayments parity. Local code checks are not production DNS, provider, payment, migration, or release acceptance.
+At the time this 2026-10-23 snapshot was written, the branch was implementing current-state docs, shared AI runtime parity, `mkety.app` customer hosting, and NowPayments parity. This statement is historical; see the 2026-11-03 authority above.
 
 ---
 
