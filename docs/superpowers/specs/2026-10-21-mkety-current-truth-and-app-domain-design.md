@@ -1,9 +1,9 @@
 # Mkety Current State, Release, and Customer App Domain Design
 
-**Status:** Draft for review  
+**Status:** Historical design draft; see the 2026-11-03 audit addendum below  
 **Prepared:** 2026-10-21  
 **Repository reviewed:** `MketyDigital/mksaas`  
-**Reviewed main SHA:** `cb88321d0d9a4037449a69ae1e3b6487e8f81b6e`
+**Reviewed main SHA at preparation:** `cb88321d0d9a4037449a69ae1e3b6487e8f81b6e`
 
 ## Problem
 
@@ -149,3 +149,14 @@ Platform Control failure responses include a safe, visible action reference and 
 - Public, Workspace, and Enterprise AI resolve central provider/model availability and credentials while retaining independent route/policy behavior; Assist remains operationally isolated with a shared catalog contract only.
 - Public AI supports the configured Azure Foundry project endpoint and `gpt-6-luna-1`, and a stale inactive model cannot prevent a valid Workers AI route from being selected.
 - Public AI database queries use the request-scoped client, and failed Platform Control mutations provide a useful correlated reference without disclosing unsafe details.
+
+
+## 2026-11-03 Production Audit Addendum
+
+This addendum supersedes the original wildcard-routing proposal below where it conflicts with the live zone inventory.
+
+The read-only Cloudflare audit ([run #2](https://github.com/MketyDigital/mksaas/actions/runs/41553033429)) found an active `mkety.app` zone, no apex DNS/Worker domain, and no general `*.mkety.app/*` Worker Route. Existing sibling records serve Assist (`*.assist.mkety.app`, `assist-origin`, `mkety-assist`, `mkay.assist`, `starpips.assist`), Media/customer hosting (`assets`, `media-fallback`, `customers`), and Pages (`etyarts-pages`). Preserve these records and bindings.
+
+Do not deploy the old broad wildcard DNS + Worker Route proposal: it could capture those existing hostnames. The intended public entry point is the exact `mkety.app` apex, and customer hostnames remain single-label names under the zone, provisioned one exact hostname at a time after checking that the hostname is unowned by other services. Only the apex and an individually verified customer hostname may be attached to the customer router; no catch-all route is approved.
+
+Production readiness is blocked: the configured Cloudflare token returned HTTP 403 when reading the Workers for Platforms namespace; the `mkety-app-router` Worker is absent; and `mkety-platform` has no `MKETY_DEPLOYMENT_LOOKUP_SECRET` binding. Therefore, neither apex attachment nor customer hosting is live. Resolve namespace permission/provisioning and the shared lookup-secret contract, deploy and smoke-test the router, then attach the exact apex and individually verified customer hostnames with before/after inventory and rollback evidence.
