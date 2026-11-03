@@ -26,6 +26,8 @@ describe('Mkety app customer dispatch router', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toContain('text/html');
     expect(await response.text()).toContain('Mkety Platform');
+    expect(await response.text()).toContain('https://mkety.com');
+    expect(await response.text()).toContain('https://app.mkety.com');
     expect(global.fetch).not.toHaveBeenCalled();
     expect(dispatcher.get).not.toHaveBeenCalled();
   });
