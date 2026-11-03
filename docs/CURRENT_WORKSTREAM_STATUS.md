@@ -28,7 +28,7 @@ The audit found no apex DNS record or apex Worker domain for `mkety.app`; it als
 
 The customer router is not deployed. The audit saw Cloudflare return HTTP 403 for the configured token's dispatch-namespace read, the router Worker/settings were absent, and `mkety-platform` did not have the `MKETY_DEPLOYMENT_LOOKUP_SECRET` binding required by the hostname resolver. These are deployment blockers, not evidence that customer previews are live. Resolve the least-privilege Cloudflare access and secret-binding requirements, then deploy and smoke-test the isolated router before attaching the exact apex. Add only verified customer hostnames after checking each against the existing zone; do not publish a catch-all route.
 
-PR #478 adds both public Mkety and Platform links to the apex response and fixes a test that had consumed the response body multiple times. It does not create DNS or attach a Worker domain.
+PR #478 merged as `faa1b7c61a1979e03d9ba07a9597586620bbfc88`; the apex response now links to both public Mkety and the Platform. This is code-only: the apex still has no DNS/Worker-domain attachment.
 
 ## Mail acceptance and remaining gates
 
