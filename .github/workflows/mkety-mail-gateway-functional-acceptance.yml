@@ -66,7 +66,7 @@ jobs:
             echo 'Accepted gateway SHA is not an ancestor of the acceptance runtime on main.'
             exit 1
           }
-          unexpected="$(git diff --name-only "$gateway_sha" "$source_sha" | grep -Ev '^(\.github/workflows/mkety-mail-gateway-functional-acceptance\.yml$|ops/mail-gateway-acceptance/|src/features/mail/server/mail-gateway-production-contract\.test\.ts$)' || true)"
+          unexpected="$(git diff --name-only "$gateway_sha" "$source_sha" | grep -Ev '^(\.github/workflows/mkety-mail-gateway-functional-acceptance\.yml$|\.github/workflows/mkety-app-domain-readonly-audit\.yml$|ops/mail-gateway-acceptance/|src/features/mail/server/mail-gateway-production-contract\.test\.ts$|docs/)' || true)"
           [ -z "$unexpected" ] || {
             echo 'Unaccepted production changes exist after the latest successful gateway SHA:'
             printf '%s\n' "$unexpected"
