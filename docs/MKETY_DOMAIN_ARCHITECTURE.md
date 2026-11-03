@@ -38,6 +38,21 @@ Customer-facing deployed applications, preview environments, generated sites, po
 
 The apex `mkety.app` is the branded Mkety Apps entry point for the customer hosting service. It must explain that `*.mkety.app` hosts customer applications and previews, and link visitors to `https://mkety.com` and `https://app.mkety.com`. It must not become the authenticated Platform dashboard and must not expose deployment internals. The customer dispatch implementation and live hostname routing are separate readiness gates recorded in `docs/CURRENT_WORKSTREAM_STATUS.md`.
 
+## 2026-11-03 live `mkety.app` audit
+
+Read-only audit #2 confirmed that the zone is active. Preserve these current records and services:
+
+| Hostnames | Current service |
+| --- | --- |
+| `*.assist.mkety.app`, `assist-origin.mkety.app`, `mkety-assist.mkety.app`, `mkay.assist.mkety.app`, `starpips.assist.mkety.app` | Assist |
+| `assets.mkety.app` | `mkety-media-assets` Worker |
+| `media-fallback.mkety.app`, `customers.mkety.app` | Media/customer fallback |
+| `etyarts-pages.mkety.app` | EtyArts Pages |
+
+There is no apex DNS record/Worker domain and no general `*.mkety.app/*` Worker Route. Do not add a broad wildcard DNS record or route. Provision the apex as an exact hostname and attach customer hostnames individually only after checking each against existing zone records and Worker domains.
+
+The customer router is not deployed. The configured audit token returned HTTP 403 for the dispatch namespace, and the `mkety-platform` Worker has no `MKETY_DEPLOYMENT_LOOKUP_SECRET` binding. Resolve those prerequisites, deploy and smoke-test the router, then attach the apex/exact customer hostnames with rollback evidence. Current evidence and remaining gates are maintained in `docs/CURRENT_WORKSTREAM_STATUS.md`.
+
 ## Implementation boundaries
 
 ### Public site
