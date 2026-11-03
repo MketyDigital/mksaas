@@ -1,24 +1,49 @@
 # Current Repository Workstream Status
 
-**Updated:** 2026-10-30  
-**Source of truth:** `main` at `cba6ead566c8f90b145993e26470531f50dd61ac`
+**Updated:** 2026-11-03  
+**Verified main:** `b987def2a308254a46c4aec7d7d0d8edb192c3d9`
 
-## Current truth
+## Current production truth
 
-- The `mkety.com` public production cutover was completed previously. Routine edits do not require another cutover. Do not rerun `CUTOVER MKETY PUBLIC` unless an actual domain or route migration is proposed and explicitly required.
-- `app.mkety.com` is the authenticated Mkety Platform. `mkety.app` is the customer app and preview namespace. PR [#469](https://github.com/MketyDigital/mksaas/pull/469) merged the customer deployment router, artifact handling, hostname ownership, preview, and approved promotion code. Candidate checks passed. No `mkety.app` DNS, Worker route, or customer hostname was changed; production attachment still requires a read-only audit of existing media/customer records and staged hostname acceptance.
-- Public AI, central provider/model catalog work, NowPayments parity, and the related migration/docs updates merged in [#469](https://github.com/MketyDigital/mksaas/pull/469), commit [`8472efb`](https://github.com/MketyDigital/mksaas/commit/8472efb0df030ac300d82552431f3570f1201a8e). Candidate checks passed, including provider responses and isolated Worker checks.
-- The post-merge Public AI runtime diagnostic [run #41036718139](https://github.com/MketyDigital/mksaas/actions/runs/41036718139) confirmed database connectivity and the assistant history endpoint, but its protected config diagnostic returned HTTP 500. Do not treat that as a successful live AI response. Commit [`cba6ead`](https://github.com/MketyDigital/mksaas/commit/cba6ead566c8f90b145993e26470531f50dd61ac) adds a main-only manual trigger to the frozen-release Public AI hotfix workflow; verify its guarded deployment and live-answer smoke before marking Public AI operational. The workflow must not bind routes or change DNS.
-- Public and Workspace AI are independent of the Enterprise customer inference gate. Enterprise customer inference remains **OFF** until controlled tenant, domain, cost/budget, and end-to-end acceptance is complete.
-- Mail Production [run #113](https://github.com/MketyDigital/mksaas/actions/runs/40940246964) deployed the Mail workers and first-party SMTP server-action database-context fix. It reported an active workspace/mailboxes, but root SPF, DKIM, and DMARC were pending; Mail ingress and external IMAP/SMTP clients remained disabled. The successful R2 content smoke is not an SMTP delivery test. Do not accept mail as production-ready until domain authentication is verified and a real non-activating SMTP test succeeds.
-- `MKETY_FIRST_PARTY_MAIL_SMTP_PASSWORD` is for the Mail acceptance test; it is not an arbitrary credential to invent. The Platform Control action generates the SMTP-only password once after the workspace, mailbox, and domain pass readiness checks. The current secret's presence is not verified here.
-- NOWPayments integration code and the [integration playbook](https://github.com/MketyDigital/mksaas/blob/main/docs/NOWPAYMENTS_INTEGRATION_PLAYBOOK.md) are merged. Candidate API-key and webhook safety checks passed; no live charge was created.
-- The production Cloudflare Tunnel connectors were upgraded to cloudflared **2026.10.3** and **2026.10.6**, verified healthy with origin TLS verification retained. See [upgrade run](https://github.com/MketyDigital/mksaas/actions/runs/40916779384) and [read-only audit](https://github.com/MketyDigital/mksaas/actions/runs/40917149896).
-- Assist remains a separate production app, data, controls, and ledger boundary. This workstream made no Assist source, deployment, or runtime changes.
+- The `mkety.com` public production cutover was completed previously. Routine code or content edits do not require another cutover. Do not rerun `CUTOVER MKETY PUBLIC` unless an actual public-domain migration is proposed and explicitly authorized.
+- `app.mkety.com` is the authenticated Mkety Platform. `mkety.app` is intended for the Mkety Apps entry page and customer preview/production hostnames. The customer routing implementation is in the repository, but the production Cloudflare router and customer host routing are **not active**.
+- Public AI is live and was verified to return a relevant answer on the public website after production workflow #35. Public and Workspace AI share the central approved provider/model catalog while remaining independent from Enterprise customer inference. Enterprise customer inference remains **OFF**.
+- Central AI admin/provider updates and runtime work are deployed. Do not enable Enterprise customer inference until its separate customer, budget, cost, isolation, and end-to-end acceptance gate is complete.
+- Mail Production workflow #115 and Mail gateway workflow #59 succeeded. The Mail runtime and gateway are deployed, but first-party Mail is **not yet ready for live acceptance**: SPF, DKIM, and DMARC were still pending in Platform Control. `MKETY_MAIL_EXTERNAL_CLIENTS_ENABLED=false`; synthetic customer IMAP/SMTP clients must remain rejected until the explicit external-client release gate passes.
+- `MKETY_FIRST_PARTY_MAIL_SMTP_PASSWORD` is not an arbitrary password setting and is not consumed by the production workflow. Platform Control generates an SMTP-only password, stores it hashed, and displays it once after readiness checks. Do not rotate it until sending-domain authentication is ready and the operator is present to capture it. No password was generated in this workstream.
+- Assist remains an isolated production product with its own runtime, data, AI controls, and credentials. This workstream made no Assist source, deployment, DNS, or runtime changes.
+
+## `mkety.app` domain audit and routing gates
+
+Read-only Cloudflare audit #2 ([run 41553033429](https://github.com/MketyDigital/mksaas/actions/runs/41553033429)) used GET requests only and redacted TXT values. It found the active zone and these existing records, which must be preserved:
+
+| Host | Existing use |
+| --- | --- |
+| `*.assist.mkety.app`, `assist-origin.mkety.app`, `mkety-assist.mkety.app`, `mkay.assist.mkety.app`, `starpips.assist.mkety.app` | Assist routing |
+| `assets.mkety.app` | `mkety-media-assets` Worker |
+| `media-fallback.mkety.app`, `customers.mkety.app` | Media/customer fallback |
+| `etyarts-pages.mkety.app` | EtyArts Pages |
+
+The audit found no apex DNS record or apex Worker domain for `mkety.app`; it also found no general `*.mkety.app` Worker route. Do not add a broad wildcard: it would overlap existing Assist, media, customer, and Pages hostnames.
+
+The customer router is not deployed. The audit saw Cloudflare return HTTP 403 for the configured token's dispatch-namespace read, the router Worker/settings were absent, and `mkety-platform` did not have the `MKETY_DEPLOYMENT_LOOKUP_SECRET` binding required by the hostname resolver. These are deployment blockers, not evidence that customer previews are live. Resolve the least-privilege Cloudflare access and secret-binding requirements, then deploy and smoke-test the isolated router before attaching the exact apex. Add only verified customer hostnames after checking each against the existing zone; do not publish a catch-all route.
+
+PR #478 adds both public Mkety and Platform links to the apex response and fixes a test that had consumed the response body multiple times. It does not create DNS or attach a Worker domain.
+
+## Mail acceptance and remaining gates
+
+- Mail acceptance run #54 stopped in preflight at the source-diff guard before creating a synthetic fixture or ephemeral app; no production Mail state changed.
+- PR #477 fixes the allowlist for the read-only domain audit and makes cleanup a no-op only when neither fixture nor ephemeral app was created. After it merges, rerun Mail acceptance and confirm cleanup. A 401 for synthetic customer credentials while external clients are disabled is expected fail-closed behavior, not proof of customer SMTP service.
+- Complete first-party sending-domain authentication, then run a non-activating first-party SMTP authentication/delivery/receipt check. Keep external customer clients disabled until their separate live TLS/authentication/delivery gate passes.
+
+## Other completed work
+
+- NOWPayments currency/network verification and settlement work, with the integration playbook, is merged. No live charge was created as part of this work.
+- Production Cloudflare Tunnel connectors were upgraded to cloudflared **2026.10.3** and **2026.10.6**, and were verified healthy with origin certificate verification retained. See [upgrade run](https://github.com/MketyDigital/mksaas/actions/runs/40916779384) and [read-only audit](https://github.com/MketyDigital/mksaas/actions/runs/40917149896).
 
 ## Release boundaries
 
-- Use exact-SHA, scoped production workflows. Candidate success is not production acceptance.
-- Do not change customer routes, `mkety.app` DNS, Mail sender DNS, or the completed `mkety.com` cutover without a scoped before/after audit and rollback plan.
-- Keep Enterprise inference disabled until its explicit acceptance gate passes.
-- Keep customer IMAP/SMTP disabled until live TLS, authentication, delivery, and receipt checks pass.
+- Use scoped, exact-SHA production workflows and verify the live result. A green candidate check is not production acceptance.
+- Keep Enterprise customer inference OFF until its explicit acceptance gate passes.
+- Do not change existing `mkety.app` customer, Media, Pages, or Assist hostnames while provisioning the apex or a specific customer hostname.
+- Do not change Mail sender DNS, external-client access, passwords, or credentials until the corresponding readiness and operator handoff gates pass.
