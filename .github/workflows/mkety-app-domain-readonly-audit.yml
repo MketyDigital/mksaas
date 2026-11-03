@@ -63,11 +63,16 @@ jobs:
           const zone=(zones.result||[]).find(x=>x.name==='mkety.app');
           const summary={zoneFound:Boolean(zone),zoneName:zone?.name||null,zoneAccountMatchesConfigured:zone?zone.account?.id===process.env.EXPECTED_ACCOUNT_ID:null};
           if(zone) {
-            const [dns,workerDomains,workerRoutes,customHostnames]=await Promise.all([
+            const accountId=zone.account.id;
+            const [dns,workerDomains,workerRoutes,customHostnames,scripts,namespace,routerSettings,platformSettings]=await Promise.all([
               list(`/zones/${zone.id}/dns_records`,true),
-              list(`/accounts/${zone.account.id}/workers/domains`,true),
+              list(`/accounts/${accountId}/workers/domains`,true),
               list(`/zones/${zone.id}/workers/routes`,true),
               list(`/zones/${zone.id}/custom_hostnames`,true),
+              list(`/accounts/${accountId}/workers/scripts`,true),
+              get(`/accounts/${accountId}/workers/dispatch/namespaces/mkety-customer-apps`,true),
+              get(`/accounts/${accountId}/workers/scripts/mkety-app-router/settings`,true),
+              get(`/accounts/${accountId}/workers/scripts/mkety-platform/settings`,true),
             ]);
             summary.dnsRecords=(dns.result||[])
               .filter(r=>r.name==='mkety.app'||r.name.endsWith('.mkety.app'))
@@ -81,6 +86,23 @@ jobs:
             summary.cloudflareForSaaSHostnames=customHostnames.accessible
               ? (customHostnames.result||[]).filter(x=>x.hostname==='mkety.app'||x.hostname.endsWith('.mkety.app')).map(x=>({hostname:x.hostname,status:x.status,sslStatus:x.ssl?.status}))
               : customHostnames;
+            summary.customerDispatchNamespace=namespace.accessible
+              ? {configuredName:namespace.result?.namespace_name||null,available:namespace.result?.namespace_name==='mkety-customer-apps'}
+              : namespace;
+            summary.appRouterWorkerPresent=scripts.accessible
+              ? (scripts.result||[]).some(x=>x.id==='mkety-app-router'||x.name==='mkety-app-router')
+              : scripts;
+            function safeBindings(settings) {
+              if(!settings.accessible) return settings;
+              const bindings=settings.result?.bindings||[];
+              return {
+                accessible:true,
+                deploymentLookupSecretBindingPresent:bindings.some(x=>x.name==='MKETY_DEPLOYMENT_LOOKUP_SECRET'),
+                bindings:bindings.map(x=>({name:x.name,type:x.type})),
+              };
+            }
+            summary.appRouterSettings=safeBindings(routerSettings);
+            summary.platformLookupSecretBinding=safeBindings(platformSettings);
           }
           console.log('# Read-only Cloudflare inventory: mkety.app');
           console.log('');
