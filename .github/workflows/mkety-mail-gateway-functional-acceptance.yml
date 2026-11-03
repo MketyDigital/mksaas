@@ -576,7 +576,7 @@ jobs:
           base="${COOLIFY_URL%/}/api/v1"
           cleanup_confirmed=false
           delete_confirmed=false
-          if [ -z "${APP_UUID:-}" ] && [ "$FIXTURE_OUTCOME" = failure ] && [ "$APP_OUTCOME" != success ]; then
+          if [ -z "${APP_UUID:-}" ] && [ "$FIXTURE_OUTCOME" = failure ] && [ "$APP_OUTCOME" = skipped ]; then
             cleanup_confirmed=true
             delete_confirmed=true
             echo 'No synthetic fixture or ephemeral app was created; no-op cleanup confirmed.'
