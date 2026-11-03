@@ -1,0 +1,179 @@
+name: Cleanup orphan synthetic Mail acceptance fixture
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_run_id:
+        description: "Type the exact orphaned synthetic acceptance run ID"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mkety-mail-orphan-acceptance-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: ${{ github.ref == 'refs/heads/main' && inputs.confirm_run_id == '36672362451' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      COOLIFY_URL: https://deploy.mkety.com
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      PROJECT_UUID: 0zqhpkprlhtvlacmsgmfyyhs
+      ENVIRONMENT_UUID: rtebcetyfvzlaiqitzcp0gl8
+      SERVER_UUID: ynkdc4tx6bi7cyxf0kuy8kte
+      ACCEPTANCE_RUN_ID: ${{ inputs.confirm_run_id }}
+
+    steps:
+      - name: Verify the exact orphaned acceptance app
+        id: target
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$ACCEPTANCE_RUN_ID" = '36672362451' ] || { echo 'Unexpected acceptance run ID.'; exit 1; }
+          [ -n "${COOLIFY_API_TOKEN:-}" ] || { echo 'COOLIFY_TOKEN is required.'; exit 1; }
+
+          base="${COOLIFY_URL%/}/api/v1"
+          curl --proto '=https' --tlsv1.2 -fsS "$base/health" >/dev/null
+          curl --proto '=https' --tlsv1.2 -fsS \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            "$base/applications" -o /tmp/apps.json
+
+          node <<'NODE'
+          const fs=require('node:fs');
+          const raw=JSON.parse(fs.readFileSync('/tmp/apps.json','utf8'));
+          const apps=Array.isArray(raw)?raw:(Array.isArray(raw.data)?raw.data:[]);
+          const name='mkety-mail-acceptance-36672362451';
+          const matches=apps.filter(app=>app?.name===name);
+          if(matches.length!==1) throw new Error('Expected exactly one stale synthetic acceptance app; found '+matches.length+'.');
+          const app=matches[0];
+          if(!app.uuid) throw new Error('The stale acceptance app has no UUID.');
+          if(app.project_uuid!==process.env.PROJECT_UUID
+            || app.environment_uuid!==process.env.ENVIRONMENT_UUID
+            || app.server_uuid!==process.env.SERVER_UUID) {
+            throw new Error('The stale acceptance app is outside the guarded project, environment, or server.');
+          }
+          if(app.dockerfile_location!=='/ops/mail-gateway-acceptance/Dockerfile'
+            || app.git_branch!=='main'
+            || !String(app.git_repository||'').includes('MketyDigital/mksaas')) {
+            throw new Error('The named app no longer matches the synthetic Mail acceptance app configuration.');
+          }
+          fs.writeFileSync('/tmp/target-app.json',JSON.stringify({uuid:app.uuid,name:app.name}));
+          console.log('Exact synthetic acceptance app identity verified.');
+          NODE
+
+          app_uuid="$(node -e "process.stdout.write(require('/tmp/target-app.json').uuid)")"
+          echo "::add-mask::$app_uuid"
+          echo "APP_UUID=$app_uuid" >> "$GITHUB_ENV"
+
+          curl --proto '=https' --tlsv1.2 -fsS \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            "$base/applications/$app_uuid/envs" -o /tmp/app-envs.json
+          APP_RUN_ID="$ACCEPTANCE_RUN_ID" node <<'NODE'
+          const fs=require('node:fs');
+          const rows=JSON.parse(fs.readFileSync('/tmp/app-envs.json','utf8'));
+          const envs=Array.isArray(rows)?rows:[];
+          const keys=new Set(envs.map(row=>String(row?.key||'')));
+          const runEnv=envs.find(row=>row?.key==='MKETY_MAIL_ACCEPTANCE_RUN_ID');
+          if(!keys.has('DATABASE_URL')||!runEnv) {
+            throw new Error('The exact acceptance app is missing its required cleanup runtime configuration.');
+          }
+          if(runEnv.value && String(runEnv.value)!==process.env.APP_RUN_ID) {
+            throw new Error('The acceptance app run ID does not match the guarded cleanup target.');
+          }
+          NODE
+
+      - name: Delete only the stale synthetic Mail fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${COOLIFY_URL%/}/api/v1"
+          target_uuid="$APP_UUID"
+          endpoint="$base/applications/$target_uuid/envs"
+
+          KEY='MKETY_MAIL_ACCEPTANCE_MODE' VALUE='cleanup' node <<'NODE' >/tmp/cleanup-env.json
+          process.stdout.write(JSON.stringify({
+            key:process.env.KEY,
+            value:process.env.VALUE,
+            is_preview:false,
+            is_literal:true,
+            is_multiline:false,
+            is_shown_once:true
+          }));
+          NODE
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/cleanup-env-response.json -w '%{http_code}' \
+            -X PATCH -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            -H 'Content-Type: application/json' --data-binary @/tmp/cleanup-env.json "$endpoint")"
+          [ "$code" = 201 ] || { echo "Could not set cleanup mode (HTTP $code)."; exit 1; }
+
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/deploy.json -w '%{http_code}' \
+            -X POST -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            "$base/deploy?uuid=$target_uuid&force=true")"
+          [ "$code" = 200 ] || { echo "Could not start the cleanup deployment (HTTP $code)."; exit 1; }
+          deployment_uuid="$(node -e "const x=require('/tmp/deploy.json');const d=Array.isArray(x.deployments)?x.deployments[0]:null;if(!d?.deployment_uuid)process.exit(1);process.stdout.write(d.deployment_uuid)")"
+
+          for i in $(seq 1 120); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+              "$base/deployments/$deployment_uuid" -o /tmp/deployment-state.json
+            state="$(node -e "process.stdout.write(String(require('/tmp/deployment-state.json').status||''))")"
+            case "${state,,}" in
+              finished|success|successful|succeeded|completed) break ;;
+              failed|failure|error|cancelled|canceled)
+                echo "Cleanup deployment ended in state $state; checking the exact fixture cleanup marker."
+                break
+                ;;
+            esac
+            [ "$i" -lt 120 ] || { echo 'Cleanup deployment timed out.'; exit 1; }
+            sleep 3
+          done
+
+          cleaned=false
+          for i in $(seq 1 60); do
+            curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+              "$base/applications/$target_uuid/logs?lines=300&show_timestamps=false" -o /tmp/cleanup-logs.json || true
+            if node <<'NODE'
+          const fs=require('node:fs');
+          try {
+            const x=JSON.parse(fs.readFileSync('/tmp/cleanup-logs.json','utf8'));
+            process.exit(String(x.logs||'').includes('MKETY_MAIL_FUNCTIONAL_FIXTURE_CLEANED=true')?0:1);
+          } catch { process.exit(1); }
+          NODE
+            then
+              cleaned=true
+              break
+            fi
+            sleep 2
+          done
+          [ "$cleaned" = true ] || { echo 'The synthetic database fixture cleanup marker was not observed; the Coolify app is retained for investigation.'; exit 1; }
+          echo 'The synthetic database fixture cleanup marker was verified.'
+
+          # Re-read exact identity immediately before deleting the ephemeral app.
+          curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $COOLIFY_API_TOKEN" \
+            "$base/applications/$target_uuid" -o /tmp/app-before-delete.json
+          APP_UUID="$target_uuid" node <<'NODE'
+          const fs=require('node:fs');
+          const app=JSON.parse(fs.readFileSync('/tmp/app-before-delete.json','utf8'));
+          if(app.uuid!==process.env.APP_UUID||app.name!=='mkety-mail-acceptance-36672362451') {
+            throw new Error('The app identity changed before deletion; refusing to delete.');
+          }
+          NODE
+
+          code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/delete-response.json -w '%{http_code}' \
+            -X DELETE -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$target_uuid")"
+          case "$code" in 200|204) ;; *) echo "Ephemeral app deletion failed (HTTP $code)."; exit 1 ;; esac
+
+          curl --proto '=https' --tlsv1.2 -fsS \
+            -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications" -o /tmp/apps-after.json
+          node <<'NODE'
+          const fs=require('node:fs');
+          const raw=JSON.parse(fs.readFileSync('/tmp/apps-after.json','utf8'));
+          const apps=Array.isArray(raw)?raw:(Array.isArray(raw.data)?raw.data:[]);
+          if(apps.some(app=>app?.name==='mkety-mail-acceptance-36672362451')) {
+            throw new Error('The stale synthetic acceptance app remains after deletion.');
+          }
+          console.log('STALE_MAIL_ACCEPTANCE_FIXTURE_CLEANUP_CONFIRMED=true');
+          NODE
