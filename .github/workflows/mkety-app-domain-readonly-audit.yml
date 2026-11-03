@@ -47,15 +47,27 @@ jobs:
             }
             return {accessible:true,...body};
           }
-          const zones=await get('/zones?name=mkety.app&status=active&per_page=50');
+          async function list(path, optional=false) {
+            const items=[]; let page=1, totalPages=1;
+            do {
+              const separator=path.includes('?')?'&':'?';
+              const response=await get(path+separator+'per_page=100&page='+page,optional);
+              if(!response.accessible) return response;
+              items.push(...(response.result||[]));
+              totalPages=Number(response.result_info?.total_pages||1);
+              page+=1;
+            } while(page<=totalPages);
+            return {accessible:true,result:items};
+          }
+          const zones=await list('/zones?name=mkety.app&status=active');
           const zone=(zones.result||[]).find(x=>x.name==='mkety.app');
           const summary={zoneFound:Boolean(zone),zoneName:zone?.name||null,zoneAccountMatchesConfigured:zone?zone.account?.id===process.env.EXPECTED_ACCOUNT_ID:null};
           if(zone) {
             const [dns,workerDomains,workerRoutes,customHostnames]=await Promise.all([
-              get(`/zones/${zone.id}/dns_records?per_page=100&page=1`),
-              get(`/accounts/${zone.account.id}/workers/domains`,true),
-              get(`/zones/${zone.id}/workers/routes?per_page=100&page=1`,true),
-              get(`/zones/${zone.id}/custom_hostnames?per_page=100&page=1`,true),
+              list(`/zones/${zone.id}/dns_records`,true),
+              list(`/accounts/${zone.account.id}/workers/domains`,true),
+              list(`/zones/${zone.id}/workers/routes`,true),
+              list(`/zones/${zone.id}/custom_hostnames`,true),
             ]);
             summary.dnsRecords=(dns.result||[])
               .filter(r=>r.name==='mkety.app'||r.name.endsWith('.mkety.app'))
