@@ -78,8 +78,12 @@ jobs:
           const rows=JSON.parse(fs.readFileSync('/tmp/app-envs.json','utf8'));
           const envs=Array.isArray(rows)?rows:[];
           const keys=new Set(envs.map(row=>String(row?.key||'')));
-          if(!keys.has('DATABASE_URL')||!keys.has('MKETY_MAIL_ACCEPTANCE_RUN_ID')) {
+          const runEnv=envs.find(row=>row?.key==='MKETY_MAIL_ACCEPTANCE_RUN_ID');
+          if(!keys.has('DATABASE_URL')||!runEnv) {
             throw new Error('The exact acceptance app is missing its required cleanup runtime configuration.');
+          }
+          if(runEnv.value && String(runEnv.value)!==process.env.APP_RUN_ID) {
+            throw new Error('The acceptance app run ID does not match the guarded cleanup target.');
           }
           NODE
 
