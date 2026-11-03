@@ -8,6 +8,7 @@ This section supersedes the dated notes below. Use `docs/CURRENT_WORKSTREAM_STAT
 - `mkety.app` audit #2 was read-only. Existing Assist, Media/customer, and Pages hostnames are listed in the current status doc and must be preserved. There is no apex DNS/Worker-domain attachment, no deployed customer router, and no general wildcard Worker route.
 - Cloudflare returned HTTP 403 when the configured audit token read the Workers for Platforms dispatch namespace; `mkety-platform` also lacks the `MKETY_DEPLOYMENT_LOOKUP_SECRET` binding. Resolve those prerequisites before deploying the customer router or attaching hostnames. Never add a broad wildcard that can capture existing siblings.
 - Assist remains a separate production runtime/data/control boundary. This work made no Assist source or deployment changes.
+- Mail synthetic acceptance run `36672362451` left its reserved `.mkety.invalid` workspace behind. The original Coolify app is absent; cleanup run `41557060095` failed closed before mutation. PR #482 merged a guarded temporary-app recovery, which still must be dispatched and verified before this fixture is marked clean.
 
 ---
 
