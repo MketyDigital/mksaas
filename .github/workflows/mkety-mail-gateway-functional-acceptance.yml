@@ -253,7 +253,8 @@ jobs:
             exit 1
           }
 
-      - name: Prove direct authorized Mail gateway API auth
+      - name: Verify customer Mail auth follows external-client gate
+        id: direct_auth
         shell: bash
         run: |
           set -euo pipefail
@@ -277,6 +278,20 @@ jobs:
           finished="$(date +%s%3N)"
           elapsed="$((finished-started))"
           echo "Direct authorized Mail API auth: HTTP $code in ${elapsed}ms."
+          if [ "$code" = 401 ] && node - <<'NODE'
+          const fs=require('node:fs');
+          try {
+            const x=JSON.parse(fs.readFileSync('/tmp/mail-auth-response.json','utf8'));
+            process.exit(x.error==='invalid_credentials'?0:1);
+          } catch {
+            process.exit(1);
+          }
+          NODE
+          then
+            echo 'Synthetic customer SMTP authentication is denied while external Mail clients are disabled.'
+            echo 'customer_clients_disabled=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ "$code" != 200 ]; then
             node - <<'NODE'
           const fs=require('node:fs');
@@ -289,6 +304,7 @@ jobs:
           NODE
             exit 1
           fi
+          echo 'customer_clients_disabled=false' >> "$GITHUB_OUTPUT"
           node - <<'NODE'
           const fs=require('node:fs');
           const x=JSON.parse(fs.readFileSync('/tmp/mail-auth-response.json','utf8'));
@@ -329,6 +345,7 @@ jobs:
           NODE
 
       - name: Prove real IMAP and SMTP app-password behavior
+        if: steps.direct_auth.outputs.customer_clients_disabled != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -469,6 +486,7 @@ jobs:
           NODE
 
       - name: Revoke synthetic app password
+        if: steps.direct_auth.outputs.customer_clients_disabled != 'true'
         shell: bash
         env:
           APP_UUID: ${{ steps.app.outputs.app_uuid }}
@@ -505,6 +523,7 @@ jobs:
           exit 1
 
       - name: Prove revoked app password fails closed
+        if: steps.direct_auth.outputs.customer_clients_disabled != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -552,22 +571,36 @@ jobs:
         run: |
           set +e
           base="${COOLIFY_URL%/}/api/v1"
+          cleanup_confirmed=false
+          delete_confirmed=false
           if [ -n "${APP_UUID:-}" ]; then
             endpoint="$base/applications/$APP_UUID/envs"
             KEY='MKETY_MAIL_ACCEPTANCE_MODE' VALUE='cleanup' node <<'NODE' >/tmp/cleanup-env.json
           process.stdout.write(JSON.stringify({key:process.env.KEY,value:process.env.VALUE,is_preview:false,is_literal:true,is_multiline:false,is_shown_once:true}));
           NODE
-            curl --proto '=https' --tlsv1.2 -sS -o /tmp/cleanup-env-response -w '%{http_code}' -X PATCH               -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/cleanup-env.json "$endpoint" >/tmp/cleanup-code
-            code="$(cat /tmp/cleanup-code)"
+            code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/cleanup-env-response -w '%{http_code}' -X PATCH               -H "Authorization: Bearer $COOLIFY_API_TOKEN" -H 'Content-Type: application/json' --data-binary @/tmp/cleanup-env.json "$endpoint")"
             if [ "$code" = 201 ]; then
-              curl --proto '=https' --tlsv1.2 -sS -o /tmp/cleanup-deploy.json -X POST                 -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$APP_UUID&force=true" >/dev/null
-              sleep 20
-              for i in $(seq 1 30); do
-                curl --proto '=https' --tlsv1.2 -sS -H "Authorization: Bearer $COOLIFY_API_TOKEN"                   "$base/applications/$APP_UUID/logs?lines=300&show_timestamps=false" -o /tmp/cleanup-logs.json || true
-                grep -Fq 'MKETY_MAIL_FUNCTIONAL_FIXTURE_CLEANED=true' /tmp/cleanup-logs.json && break
-                sleep 2
-              done
+              deploy_code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/cleanup-deploy.json -w '%{http_code}' -X POST                 -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/deploy?uuid=$APP_UUID&force=true")"
+              if [ "$deploy_code" = 200 ]; then
+                for i in $(seq 1 30); do
+                  curl --proto '=https' --tlsv1.2 -sS -H "Authorization: Bearer $COOLIFY_API_TOKEN"                     "$base/applications/$APP_UUID/logs?lines=300&show_timestamps=false" -o /tmp/cleanup-logs.json || true
+                  if grep -Fq 'MKETY_MAIL_FUNCTIONAL_FIXTURE_CLEANED=true' /tmp/cleanup-logs.json; then
+                    cleanup_confirmed=true
+                    break
+                  fi
+                  sleep 2
+                done
+              fi
             fi
-            curl --proto '=https' --tlsv1.2 -sS -o /tmp/delete-response -w '%{http_code}' -X DELETE               -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID" >/tmp/delete-code
+            delete_code="$(curl --proto '=https' --tlsv1.2 -sS -o /tmp/delete-response -w '%{http_code}' -X DELETE               -H "Authorization: Bearer $COOLIFY_API_TOKEN" "$base/applications/$APP_UUID")"
+            case "$delete_code" in 200|204) delete_confirmed=true ;; esac
           fi
-          echo 'Synthetic acceptance cleanup attempted.'
+          if [ "$cleanup_confirmed" != true ]; then
+            echo 'Synthetic Mail fixture cleanup was not confirmed by the app cleanup marker.'
+            exit 1
+          fi
+          if [ "$delete_confirmed" != true ]; then
+            echo 'Synthetic Mail ephemeral host deletion was not confirmed.'
+            exit 1
+          fi
+          echo 'Synthetic Mail fixture cleanup and ephemeral host deletion confirmed.'
