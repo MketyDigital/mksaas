@@ -39,6 +39,11 @@ describe('Mkety Mail gateway production contract', () => {
     expect(workflow).toContain("limits_memory:'128m'");
   });
 
+  it('supersedes stale Mail gateway production runs', () => {
+    expect(workflow).toContain('group: mkety-mail-gateway-production');
+    expect(workflow).toContain('cancel-in-progress: true');
+  });
+
   it('requires the exact SHA and successful Mail production first', () => {
     expect(workflow).toContain("verify_success mkety-mail-production.yml Mail-Production");
     expect(workflow).toContain("Refusing stale Mail gateway deployment.");
