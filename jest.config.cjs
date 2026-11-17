@@ -1,6 +1,9 @@
 /** @type {import('@jest/types').Config.InitialOptions} */
 module.exports = {
   testEnvironment: 'jsdom',
+  testEnvironmentOptions: {
+    customExportConditions: ['node', 'node-addons'],
+  },
   roots: ['<rootDir>/src/'],
   testMatch: ['**/*.(test|spec).ts?(x)'],
   transform: {
