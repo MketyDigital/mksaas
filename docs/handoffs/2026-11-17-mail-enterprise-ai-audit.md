@@ -49,3 +49,10 @@
 2. Complete Mail provider authentication and first-party end-to-end acceptance, reconcile the imported mailbox, rehearse rollback, and verify any outstanding fixture through the guarded recovery workflow.
 3. Complete DomainNameAPI OT&E and customer white-label domain/login-isolation acceptance.
 4. Re-read `docs/CURRENT_WORKSTREAM_STATUS.md` and the relevant production handoffs before any separately authorized Mail cutover or Enterprise inference enablement. Record operator evidence there; do not mark those gates complete from this local audit.
+
+## Exact-head CI update — 2026-11-17
+
+- PR #484 was opened at `efcd4547b05ce115abf6e3e8cb5dac30e5d3aee7`. Its initial CI attempt exposed an incomplete uploaded lockfile; the branch was corrected and advanced to `7811c087b66dca08969cafe238cb72be30e8d14c`, with the lockfile blob verified against the local Git object.
+- On the corrected exact head, typecheck, lint, build, test, MegaLinter, Cloudflare vinext smoke, content DB smoke, migration baseline, and PR validation passed. The dependency security audit failed because `picomatch@4.0.7` is now reported by GHSA-fc5q-39xc-vjpf (high severity; affected through 4.0.7, with no patched version listed). The local audit predates that advisory update.
+- Do not merge or deploy this PR while the required dependency audit is failing. Revisit the `picomatch` dependency when the upstream project publishes an accepted fix, then rerun the full exact-head checks.
+- The isolated Public Candidate workflow was still in progress at handoff update time. It is not a production deployment and does not enable Enterprise customer inference.
