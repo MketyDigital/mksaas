@@ -1,7 +1,7 @@
 # Current Repository Workstream Status
 
-**Updated:** 2026-11-03  
-**Verified main:** `3c7c05ca58625ae05c11812aa8ab308a844be452`
+**Updated:** 2026-11-18 (Mail fixture cleanup and PR #484 reviewed; other live production details remain as last verified on 2026-11-03)  
+**Verified main:** `13c5a18981a642afb245b39c8ff02cc0623be9a3`
 
 ## Current production truth
 
@@ -34,7 +34,7 @@ PR #478 merged as `faa1b7c61a1979e03d9ba07a9597586620bbfc88`; the apex response 
 
 - Mail acceptance run #54 stopped in preflight at the source-diff guard before creating a synthetic fixture or ephemeral app; no production Mail state changed.
 - PR #477 (`4ef57bc8dc3145a895ee70834ecb714260667348`) and follow-up PR #480 (`36caef6dd27de1a0618bb629de96ac727e7a2d36`) merged the scoped source-diff allowlists and strict no-op cleanup condition. Acceptance run #55 stopped before mutation because two unrelated router paths were not yet allowlisted. Run [#56](https://github.com/MketyDigital/mksaas/actions/runs/41555176090) passed preflight, used an ephemeral synthetic fixture/app, received HTTP 401 for synthetic customer SMTP auth while `MKETY_MAIL_EXTERNAL_CLIENTS_ENABLED=false` (expected fail-closed behavior), and confirmed fixture cleanup and ephemeral app deletion. This verifies the disabled-client gate and cleanup; it does not test live customer IMAP/SMTP delivery or first-party SMTP.
-- The exact synthetic fixture from run `36672362451` is still present in Mail Control Center as `mail-gateway-acceptance-36672362451.mkety.invalid`; its original Coolify app is absent. Cleanup run [#1](https://github.com/MketyDigital/mksaas/actions/runs/41557060095) stopped at app identity verification before database or app mutation. PR #482 merged a guarded fallback that creates a temporary cleanup-only runtime when the old app is absent and deletes it only after the fixture-cleaned marker is observed. The recovery dispatch has not completed; do not count this fixture as removed.
+- The exact synthetic fixture from run `36672362451` was targeted by recovery dispatch [#3](https://github.com/MketyDigital/mksaas/actions/runs/41697827800) on 2026-11-03. The workflow completed both exact-target verification and the stale-fixture cleanup step successfully. The earlier failed cleanup run [#1](https://github.com/MketyDigital/mksaas/actions/runs/41557060095) remains part of the history; the later successful recovery means this fixture is no longer an open cleanup gate. This does not verify first-party or real-customer Mail acceptance.
 - Complete first-party sending-domain authentication, then run a non-activating first-party SMTP authentication/delivery/receipt check. Keep external customer clients disabled until their separate live TLS/authentication/delivery gate passes.
 
 ## Other completed work
