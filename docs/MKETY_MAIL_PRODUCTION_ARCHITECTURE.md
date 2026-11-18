@@ -90,6 +90,12 @@ Customers never receive Mkety's Cloudflare credentials.
 - Root MX stays on Zoho until mailbox inventory, initial import, per-address inbound/outbound acceptance, sending authentication, and rollback evidence pass. The Ops cutover action snapshots root MX/TXT, sets and verifies the Worker catch-all, then enables Email Routing and verifies the public MX before marking routing active.
 - The Ops panel prepares temporary exact test routes on `mail.mkety.com`; these route test messages directly to canonical root mailboxes without Zoho forwarding. The final `hello@` delta and live inbound checks are required before the cutover is marked complete.
 - Transactional platform mail continues to use the verified first-party sending domain. The migration does not change ZITADEL or its SMTP provider automatically.
+
+#### First-party outbound diagnostic
+
+- In Ops → Mail Operations → Mail delivery diagnostics, an authorized platform operator can queue one test message from `info@mkety.com` to a chosen recipient. The first-party domain must be `sending_ready`, sending must be enabled, and SPF, DKIM, and DMARC must be verified.
+- The diagnostic uses the same platform sender, queue, Cloudflare Email Sending binding, and dispatch-result callback as other platform mail. Ops records the attempt and shows recent outbound message state, provider events, and sanitized queue/provider errors. Runtime callback failures after provider acceptance remain visible as queued messages and in Worker logs; the queue item is not retried to avoid duplicate delivery.
+- A queued or provider-accepted event does not prove inbox placement. Confirm receipt at the destination and inspect later delivery, bounce, rejection, or failure events. This diagnostic does not enable customer external Mail clients or change root MX.
 - The guarded rollback action disables Cloudflare Email Routing, restores the saved root MX/TXT records, and verifies public MX before clearing the Mkety root-routing state.
 
 Implementation plan: `docs/superpowers/plans/2026-10-09-mkety-full-domain-mail.md`. Do not use the superseded Zoho-forwarding split as the target architecture.
