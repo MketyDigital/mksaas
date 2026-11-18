@@ -26,6 +26,7 @@ export async function POST(request:Request){
     status?:'sent'|'failed';
     providerMessageId?:string;
     errorCode?:string;
+    errorDetail?:string;
     textR2Key?:string;
     htmlR2Key?:string;
   }|null;
@@ -36,6 +37,14 @@ export async function POST(request:Request){
   const tenantId=payload.tenantId;
   const recipientAddress=payload.recipient;
   const status=payload.status;
+  const errorCode=String(payload.errorCode||'').replace(/[^a-zA-Z0-9_.:-]/g,'').slice(0,64)||null;
+  const errorDetail=String(payload.errorDetail||'')
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,'[redacted-email]')
+    .replace(/\bBearer\s+\S+/gi,'Bearer [redacted]')
+    .replace(/(token|secret|password|api[-_ ]?key)\s*[:=]\s*[^\s,;]+/gi,'$1=[redacted]')
+    .replace(/[\r\n\t\u0000-\u001f]+/g,' ')
+    .trim()
+    .slice(0,500)||null;
   const now=new Date();
 
   if(payload.kind==='customer_update'){
@@ -52,7 +61,7 @@ export async function POST(request:Request){
       await tx.update(mailCustomerUpdateRecipients).set({
         status,
         providerMessageId:payload.providerMessageId||null,
-        errorCode:payload.errorCode||null,
+        errorCode,
         sentAt:status==='sent'?now:null,
       }).where(and(eq(mailCustomerUpdateRecipients.id,recipient.id),eq(mailCustomerUpdateRecipients.tenantId,tenantId)));
 
@@ -62,7 +71,7 @@ export async function POST(request:Request){
         providerEventId:null,
         eventType:status,
         recipient:recipientAddress,
-        payload:{providerMessageId:payload.providerMessageId||null,errorCode:payload.errorCode||null},
+        payload:{providerMessageId:payload.providerMessageId||null,errorCode,errorDetail},
         occurredAt:now,
       });
 
@@ -96,7 +105,7 @@ export async function POST(request:Request){
       providerEventId:null,
       eventType:status,
       recipient:recipientAddress,
-      payload:{providerMessageId:payload.providerMessageId||null,errorCode:payload.errorCode||null},
+      payload:{providerMessageId:payload.providerMessageId||null,errorCode,errorDetail},
       occurredAt:now,
     });
   });

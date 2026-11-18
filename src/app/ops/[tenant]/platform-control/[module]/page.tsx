@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation';
+import Link from 'next/link';
 
 import { AiCommercialControlPanel } from '@/features/ai-runtime/components/AiCommercialControlPanel';
 import { getAiCommercialControlOverview } from '@/features/ai-runtime/server/commercial-admin-queries';
@@ -13,6 +14,7 @@ import { getDeploymentApprovalQueue } from '@/features/deploy/server/request-que
 import { DomainResellerControlPanel } from '@/features/domains/components/DomainResellerControlPanel';
 import { getDomainResellerConnections } from '@/features/domains/server/reseller-admin-actions';
 import { FirstPartyMailCutoverPanel } from '@/features/mail/components/FirstPartyMailCutoverPanel';
+import { MailDeliveryDiagnosticsPanel } from '@/features/mail/components/MailDeliveryDiagnosticsPanel';
 import { FirstPartySmtpCredentialForm } from '@/features/mail/components/FirstPartySmtpCredentialForm';
 import { MailEnterpriseOffersPanel } from '@/features/mail/components/MailEnterpriseOffersPanel';
 import { bootstrapFirstPartyMailWorkspace, createMailPlanVersion, reconcileMailCatalog, updateMailDomainOperations, updateMailWorkspaceOperations } from '@/features/mail/server/admin-actions';
@@ -188,6 +190,13 @@ async function renderPlatformControlModulePage({ params, searchParams }: Platfor
 
   return (
     <div className="space-y-8">
+      <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Link className="hover:text-foreground hover:underline" href={`/ops/${tenant}/platform-control`}>
+          Control Center
+        </Link>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page" className="font-medium text-foreground">{controlModule.label}</span>
+      </nav>
       {adminStatus === 'saved' ? (
         <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-3 text-sm">
           Saved successfully{adminAction ? ` · ${adminAction}` : ''}.
@@ -602,6 +611,19 @@ async function renderPlatformControlModulePage({ params, searchParams }: Platfor
               <CardDescription>Provision the internal SMTP identity used by Mkety platform mail and identity services. Zoho remains the root MX provider; Cloudflare sending is authenticated separately.</CardDescription>
             </CardHeader>
             <CardContent><FirstPartySmtpCredentialForm tenant={tenant} /></CardContent>
+          </Card>
+          <Card className="rounded-2xl border-primary/20">
+            <CardHeader>
+              <CardTitle>Mail delivery diagnostics</CardTitle>
+              <CardDescription>Send one real first-party test message and inspect persisted queue/provider outcomes and safe error details.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <MailDeliveryDiagnosticsPanel
+                tenant={tenant}
+                activity={mailOperations.activity}
+                recentMessages={mailOperations.recentMessages}
+              />
+            </CardContent>
           </Card>
           <Card className="rounded-2xl border-primary/20">
             <CardHeader>

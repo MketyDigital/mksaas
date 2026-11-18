@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, isNull, like, ne } from 'drizzle-orm';
 
 import { db } from '@/shared/db/cloudflare';
-import { billingPlans, billingPlanVersions, mailDomains, mailEnterpriseOffers, mailWorkspaces, platformEnterpriseOrders, tenants } from '@/shared/db/schema';
+import { billingPlans, billingPlanVersions, mailDeliveryEvents, mailDomains, mailEnterpriseOffers, mailMessages, mailWorkspaces, platformEnterpriseOrders, tenants } from '@/shared/db/schema';
 
 import { resolveTenantMailPlanKey } from './commercial';
 
@@ -75,7 +75,7 @@ export async function getMailOperationsOverview(limit = 100) {
     )
     .orderBy(asc(billingPlans.key));
 
-  const [customers, offers] = await Promise.all([
+  const [customers, offers, activity, recentMessages] = await Promise.all([
     db.select({ id: tenants.id, name: tenants.name, slug: tenants.slug })
       .from(tenants)
       .where(ne(tenants.slug, 'mkety-ops'))
@@ -99,11 +99,46 @@ export async function getMailOperationsOverview(limit = 100) {
       .leftJoin(platformEnterpriseOrders, eq(platformEnterpriseOrders.id, mailEnterpriseOffers.orderId))
       .orderBy(desc(mailEnterpriseOffers.createdAt))
       .limit(50),
+    db.select({
+      id: mailDeliveryEvents.id,
+      tenantId: mailDeliveryEvents.tenantId,
+      tenantName: tenants.name,
+      tenantSlug: tenants.slug,
+      messageId: mailDeliveryEvents.messageId,
+      eventType: mailDeliveryEvents.eventType,
+      recipient: mailDeliveryEvents.recipient,
+      payload: mailDeliveryEvents.payload,
+      occurredAt: mailDeliveryEvents.occurredAt,
+      messageStatus: mailMessages.status,
+      providerMessageId: mailMessages.providerMessageId,
+    }).from(mailDeliveryEvents)
+      .innerJoin(tenants, eq(tenants.id, mailDeliveryEvents.tenantId))
+      .leftJoin(mailMessages, eq(mailMessages.id, mailDeliveryEvents.messageId))
+      .orderBy(desc(mailDeliveryEvents.occurredAt))
+      .limit(50),
+    db.select({
+      id: mailMessages.id,
+      tenantId: mailMessages.tenantId,
+      tenantName: tenants.name,
+      tenantSlug: tenants.slug,
+      fromAddress: mailMessages.fromAddress,
+      recipients: mailMessages.toJson,
+      status: mailMessages.status,
+      providerMessageId: mailMessages.providerMessageId,
+      createdAt: mailMessages.createdAt,
+      sentAt: mailMessages.sentAt,
+    }).from(mailMessages)
+      .innerJoin(tenants, eq(tenants.id, mailMessages.tenantId))
+      .where(eq(mailMessages.direction, 'outbound'))
+      .orderBy(desc(mailMessages.createdAt))
+      .limit(50),
   ]);
 
   return {
     catalog,
     workspaces: rows,
+    activity,
+    recentMessages,
     customers,
     offers: offers.map((offer) => ({
       ...offer,
