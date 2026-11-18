@@ -54,7 +54,22 @@ type Env={
   MKETY_MAIL_CALLBACK_URL:string;
 };
 
-async function report(env:Env,job:MailJob,result:{status:'sent'|'failed';providerMessageId?:string;errorCode?:string;textR2Key?:string;htmlR2Key?:string}){
+function providerFailure(error:unknown){
+  const value=error as {name?:unknown;code?:unknown;message?:unknown}|null;
+  const name=typeof value?.name==='string'?value.name:'';
+  const code=value?.code===undefined?'':String(value.code).trim().slice(0,64);
+  const raw=typeof value?.message==='string'?value.message:String(error||'');
+  const detail=raw
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,'[redacted-email]')
+    .replace(/\bBearer\s+\S+/gi,'Bearer [redacted]')
+    .replace(/(token|secret|password|api[-_ ]?key)\s*[:=]\s*[^\s,;]+/gi,'$1=[redacted]')
+    .replace(/[\r\n\t\u0000-\u001f]+/g,' ')
+    .trim()
+    .slice(0,500);
+  return {errorCode:code||name||'send_failed',errorDetail:detail||'Email provider rejected the send request.'};
+}
+
+async function report(env:Env,job:MailJob,result:{status:'sent'|'failed';providerMessageId?:string;errorCode?:string;errorDetail?:string;textR2Key?:string;htmlR2Key?:string}){
   const response=await fetch(env.MKETY_MAIL_CALLBACK_URL,{
     method:'POST',
     headers:{authorization:`Bearer ${env.MKETY_MAIL_INTERNAL_SECRET}`,'content-type':'application/json'},
@@ -86,8 +101,9 @@ async function send(env:Env,job:MailJob){
       await env.MAIL_STORAGE.put(htmlR2Key,job.html,{httpMetadata:{contentType:'text/html; charset=utf-8'}});
     }
   }
+  let result:EmailSendResult;
   try{
-    const result=await env.EMAIL.send({
+    result=await env.EMAIL.send({
       from:job.from,
       to:job.to,
       ...(job.cc?.length?{cc:job.cc}:{}),
@@ -98,10 +114,20 @@ async function send(env:Env,job:MailJob){
       ...(job.text?{text:job.text}:{}),
       ...(job.headers?{headers:job.headers}:{}),
     });
+  }catch(error){
+    const failure=providerFailure(error);
+    console.error('MKETY_MAIL_PROVIDER_SEND_FAILED',JSON.stringify({messageId:job.messageId||null,...failure}));
+    await report(env,job,{status:'failed',...failure,textR2Key,htmlR2Key});
+    return;
+  }
+
+  try{
     await report(env,job,{status:'sent',providerMessageId:result.messageId,textR2Key,htmlR2Key});
   }catch(error){
-    const code=typeof error==='object'&&error&&'code' in error?String((error as {code?:unknown}).code||'send_failed'):'send_failed';
-    await report(env,job,{status:'failed',errorCode:code,textR2Key,htmlR2Key});
+    // Cloudflare has accepted the message. Do not retry the queue item and risk
+    // sending a duplicate just because the app callback is temporarily unavailable.
+    const failure=providerFailure(error);
+    console.error('MKETY_MAIL_ACCEPTED_STATUS_CALLBACK_FAILED',JSON.stringify({messageId:job.messageId||null,...failure}));
   }
 }
 

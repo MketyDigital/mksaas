@@ -18,6 +18,7 @@ import {
   billingPlanVersionEntitlements,
   billingPlanVersions,
   mailAppPasswords,
+  mailDeliveryEvents,
   mailDomains,
   mailEnterpriseOffers,
   mailMailboxes,
@@ -283,6 +284,124 @@ export async function createFirstPartySmtpCredential(
   formData: FormData,
 ): Promise<{ secret?: string; error?: string }> {
   return withServerActionDatabase(() => createFirstPartySmtpCredentialImpl(opsTenantSlug, state, formData));
+}
+
+type FirstPartyMailTestState = {
+  status?: 'queued' | 'error';
+  message?: string;
+  reference?: string;
+};
+
+function safeMailTestDiagnostic(error: unknown) {
+  const value = error as { name?: unknown; message?: unknown; code?: unknown } | null;
+  const detail = String(value?.message ?? error ?? '')
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[redacted-email]')
+    .replace(/\bBearer\s+\S+/gi, 'Bearer [redacted]')
+    .replace(/(token|secret|password|api[-_ ]?key)\s*[:=]\s*[^\s,;]+/gi, '$1=[redacted]')
+    .replace(/[\r\n\t\u0000-\u001f]+/g, ' ')
+    .trim()
+    .slice(0, 500);
+  return {
+    errorCode: String(value?.code ?? value?.name ?? 'mail_test_failed').replace(/[^a-zA-Z0-9_.:-]/g, '').slice(0, 64),
+    errorDetail: detail || 'The Mail test could not be queued.',
+  };
+}
+
+async function sendFirstPartyMailTestImpl(
+  opsTenantSlug: string,
+  _state: FirstPartyMailTestState,
+  formData: FormData,
+): Promise<FirstPartyMailTestState> {
+  const actor = await requireMailOps(opsTenantSlug);
+  const recipient = String(formData.get('recipient') ?? '').trim().toLowerCase();
+  if (recipient.length > 320 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
+    return { status: 'error', message: 'Enter a valid destination email address.' };
+  }
+
+  const tenantId = getFirstPartyMailTenantId().trim();
+  if (!tenantId) return { status: 'error', message: 'The first-party Mail tenant is not configured.' };
+
+  const attemptId = crypto.randomUUID();
+  const startedAt = new Date();
+  const [attempt] = await db.insert(mailDeliveryEvents).values({
+    tenantId,
+    eventType: 'test_started',
+    recipient,
+    payload: { source: 'platform_control', actorId: actor.userId, attemptId },
+    occurredAt: startedAt,
+  }).returning({ id: mailDeliveryEvents.id });
+  if (!attempt) return { status: 'error', message: 'Could not create the Mail test record.' };
+
+  try {
+    const result = await sendPlatformMail({
+      category: 'product_status',
+      to: recipient,
+      subject: 'Mkety Mail delivery test',
+      text: [
+        'This is a test message from the Mkety Mail operations console.',
+        `Reference: ${attemptId}`,
+        'If this message reached your inbox, outbound delivery is working for this recipient.',
+      ].join('\n\n'),
+      idempotencyKey: `mail-ops-test:${attemptId}`,
+      includeQueueErrorDetails: true,
+    });
+
+    if (!result.ok) {
+      const reason = result.reason;
+      const message = reason === 'not_ready'
+        ? 'Send blocked: the first-party workspace, entitlement, or sending-ready domain configuration is incomplete. Check the domain state, Sending enabled, and SPF/DKIM/DMARC.'
+        : reason === 'queue_failed'
+          ? 'The provider queue rejected the test. The failure is recorded below.'
+          : reason === 'rate_limited'
+            ? 'The test was blocked by the current Mail sending limit.'
+            : reason === 'suppressed'
+              ? 'The recipient is on the Mail suppression list.'
+              : `The test could not be sent (${reason}).`;
+      await db.update(mailDeliveryEvents).set({
+        ...(reason === 'queue_failed' && 'messageId' in result ? { messageId: result.messageId } : {}),
+        eventType: 'test_failed',
+        payload: {
+          source: 'platform_control',
+          actorId: actor.userId,
+          attemptId,
+          reason,
+          ...('errorCode' in result && result.errorCode ? { errorCode: result.errorCode } : {}),
+          ...('errorDetail' in result && result.errorDetail ? { errorDetail: result.errorDetail } : {}),
+        },
+      }).where(and(eq(mailDeliveryEvents.id, attempt.id), eq(mailDeliveryEvents.tenantId, tenantId)));
+      revalidatePath(`/ops/${opsTenantSlug}/platform-control/mail-operations`);
+      return { status: 'error', message, reference: attemptId };
+    }
+
+    await db.update(mailDeliveryEvents).set({
+      messageId: result.messageId,
+      eventType: 'test_queued',
+      payload: { source: 'platform_control', actorId: actor.userId, attemptId, messageStatus: result.status },
+    }).where(and(eq(mailDeliveryEvents.id, attempt.id), eq(mailDeliveryEvents.tenantId, tenantId)));
+    revalidatePath(`/ops/${opsTenantSlug}/platform-control/mail-operations`);
+    return {
+      status: 'queued',
+      message: 'Test message queued. Check the delivery log below for provider acceptance, delivery, or a detailed failure.',
+      reference: attemptId,
+    };
+  } catch (error) {
+    const diagnostic = safeMailTestDiagnostic(error);
+    await db.update(mailDeliveryEvents).set({
+      eventType: 'test_failed',
+      payload: { source: 'platform_control', actorId: actor.userId, attemptId, ...diagnostic },
+    }).where(and(eq(mailDeliveryEvents.id, attempt.id), eq(mailDeliveryEvents.tenantId, tenantId)));
+    console.error(`MKETY_MAIL_OPS_TEST_FAILED:${attemptId}`, diagnostic);
+    revalidatePath(`/ops/${opsTenantSlug}/platform-control/mail-operations`);
+    return { status: 'error', message: 'The Mail test failed and the diagnostic was recorded in the delivery log.', reference: attemptId };
+  }
+}
+
+export async function sendFirstPartyMailTest(
+  opsTenantSlug: string,
+  state: FirstPartyMailTestState,
+  formData: FormData,
+): Promise<FirstPartyMailTestState> {
+  return withServerActionDatabase(() => sendFirstPartyMailTestImpl(opsTenantSlug, state, formData));
 }
 
 export async function configureFirstPartyMailIngressAliases(

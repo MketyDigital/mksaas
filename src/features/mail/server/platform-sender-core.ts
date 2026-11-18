@@ -25,6 +25,7 @@ export type PlatformMailInput = {
   text: unknown;
   html?: unknown;
   idempotencyKey: unknown;
+  includeQueueErrorDetails?: boolean;
 };
 
 type PlatformMailMessage = {
@@ -124,18 +125,39 @@ export async function sendPlatformMailWithDependencies(
         text,
         ...(html ? { html } : {}),
       });
-      return true;
-    } catch {
+      return { queued: true as const };
+    } catch (error) {
       await dependencies.setMessageStatus(messageId, 'failed').catch(() => undefined);
-      return false;
+      const value = error as { name?: unknown; code?: unknown; providerCode?: unknown; httpStatus?: unknown; message?: unknown } | null;
+      const errorCode = String(value?.code ?? value?.providerCode ?? value?.name ?? 'queue_failed').replace(/[^a-zA-Z0-9_.:-]/g, '').slice(0, 64);
+      const errorDetail = String(value?.message ?? error ?? '')
+        .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[redacted-email]')
+        .replace(/\bBearer\s+\S+/gi, 'Bearer [redacted]')
+        .replace(/(token|secret|password|api[-_ ]?key)\s*[:=]\s*[^\s,;]+/gi, '$1=[redacted]')
+        .replace(/[\r\n\t\u0000-\u001f]+/g, ' ')
+        .trim()
+        .slice(0, 500) || 'The Mail dispatch queue rejected the message.';
+      const status = Number(value?.httpStatus);
+      return { queued: false as const, messageId, errorCode, errorDetail: status ? `${errorDetail} (HTTP ${status})` : errorDetail };
     }
   };
+
+  const queueFailure = (failure: Exclude<Awaited<ReturnType<typeof enqueueMessage>>, { queued: true }>) => ({
+    ok: false as const,
+    reason: 'queue_failed' as const,
+    ...(input.includeQueueErrorDetails ? {
+      messageId: failure.messageId,
+      errorCode: failure.errorCode,
+      errorDetail: failure.errorDetail,
+    } : {}),
+  });
 
   const retryFailed = async (messageId: string) => {
     if (!(await dependencies.retryFailedMessage(messageId))) {
       return { ok: true as const, messageId, status: 'duplicate' as const };
     }
-    if (!(await enqueueMessage(messageId))) return { ok: false as const, reason: 'queue_failed' as const };
+    const enqueueResult = await enqueueMessage(messageId);
+    if (!enqueueResult.queued) return queueFailure(enqueueResult);
     return { ok: true as const, messageId, status: 'queued' as const };
   };
 
@@ -159,6 +181,7 @@ export async function sendPlatformMailWithDependencies(
     return { ok: true as const, messageId: message.id, status: 'duplicate' as const };
   }
 
-  if (!(await enqueueMessage(message.id))) return { ok: false as const, reason: 'queue_failed' as const };
+  const enqueueResult = await enqueueMessage(message.id);
+  if (!enqueueResult.queued) return queueFailure(enqueueResult);
   return { ok: true as const, messageId: message.id, status: 'queued' as const };
 }
