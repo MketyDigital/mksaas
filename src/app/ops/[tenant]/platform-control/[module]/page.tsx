@@ -1,5 +1,5 @@
-import { notFound } from 'next/navigation';
 import Link from 'next/link';
+import { notFound } from 'next/navigation';
 
 import { AiCommercialControlPanel } from '@/features/ai-runtime/components/AiCommercialControlPanel';
 import { getAiCommercialControlOverview } from '@/features/ai-runtime/server/commercial-admin-queries';
@@ -14,8 +14,8 @@ import { getDeploymentApprovalQueue } from '@/features/deploy/server/request-que
 import { DomainResellerControlPanel } from '@/features/domains/components/DomainResellerControlPanel';
 import { getDomainResellerConnections } from '@/features/domains/server/reseller-admin-actions';
 import { FirstPartyMailCutoverPanel } from '@/features/mail/components/FirstPartyMailCutoverPanel';
-import { MailDeliveryDiagnosticsPanel } from '@/features/mail/components/MailDeliveryDiagnosticsPanel';
 import { FirstPartySmtpCredentialForm } from '@/features/mail/components/FirstPartySmtpCredentialForm';
+import { MailDeliveryDiagnosticsPanel } from '@/features/mail/components/MailDeliveryDiagnosticsPanel';
 import { MailEnterpriseOffersPanel } from '@/features/mail/components/MailEnterpriseOffersPanel';
 import { bootstrapFirstPartyMailWorkspace, createMailPlanVersion, reconcileMailCatalog, updateMailDomainOperations, updateMailWorkspaceOperations } from '@/features/mail/server/admin-actions';
 import { getMailOperationsOverview } from '@/features/mail/server/admin-queries';
