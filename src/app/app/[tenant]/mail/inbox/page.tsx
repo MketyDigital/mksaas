@@ -22,6 +22,7 @@ const folders=[
 export default async function MailInboxPage({params,searchParams}:{params:Promise<{tenant:string}>;searchParams:Promise<Record<string,string|undefined>>}){
   const {tenant}=await params;
   const query=await searchParams;
+  const testMode=query.test==='1';
   const access=await requireMailWorkspaceAccess(tenant);
   const [allMailboxes,memberRows,domains]=await Promise.all([
     db.query.mailMailboxes.findMany({where:and(eq(mailMailboxes.tenantId,access.tenant.id),eq(mailMailboxes.status,'active'))}),
@@ -45,23 +46,24 @@ export default async function MailInboxPage({params,searchParams}:{params:Promis
     <PageHeader variant="hero" icon={<Inbox className="h-5 w-5"/>} title="Inbox" description="Send, receive and manage your business conversations in one simple place."/>
 
     {(query.sent||query.saved)&&<div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm">{query.sent?'Message queued for secure delivery.':'Draft saved.'}</div>}
+    {testMode&&<div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm">Send this to an address you can check. The message will use your selected mailbox and normal domain, suppression and sending-limit checks.</div>}
     {query.error&&<div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm">We couldn’t complete that action. Check the recipient, mailbox and domain status, then try again.</div>}
 
     {!selected?<Card className="rounded-2xl"><CardContent className="py-8"><p className="text-sm text-muted-foreground">Create your first mailbox to start sending and receiving email.</p><a className="mt-4 inline-flex rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground" href={`/app/${tenant}/mail/mailboxes`}>Create mailbox</a></CardContent></Card>:
     <>
       <Card className="rounded-2xl">
-        <CardHeader><CardTitle>Compose</CardTitle><CardDescription>Send from your verified business address or save the message as a draft.</CardDescription></CardHeader>
+        <CardHeader><CardTitle>Compose</CardTitle><CardDescription>{testMode?'Send a test message through the same delivery pipeline used for regular mail.':'Send from your verified business address or save the message as a draft.'}</CardDescription></CardHeader>
         <CardContent><form action={compose} className="grid gap-3">
           <label className="text-sm font-medium">From<select name="mailboxId" defaultValue={selected.id} className="mt-2 w-full rounded-xl border bg-background px-4 py-3">{mailboxes.map((mailbox)=>{const domain=domains.find((item)=>item.id===mailbox.domainId);return <option key={mailbox.id} value={mailbox.id}>{mailbox.displayName?mailbox.displayName+' · ':''}{mailbox.localPart}@{domain?.domain}</option>;})}</select></label>
           <div className="grid gap-3 md:grid-cols-3">
-            <label className="text-sm font-medium md:col-span-2">To<input name="to" type="email" className="mt-2 w-full rounded-xl border bg-background px-4 py-3" placeholder="customer@example.com"/></label>
+            <label className="text-sm font-medium md:col-span-2">To<input name="to" type="email" className="mt-2 w-full rounded-xl border bg-background px-4 py-3" placeholder="customer@example.com" required={testMode}/></label>
             <label className="text-sm font-medium">CC<input name="cc" type="email" className="mt-2 w-full rounded-xl border bg-background px-4 py-3"/></label>
           </div>
           <label className="text-sm font-medium">BCC<input name="bcc" type="email" className="mt-2 w-full rounded-xl border bg-background px-4 py-3"/></label>
-          <label className="text-sm font-medium">Subject<input name="subject" className="mt-2 w-full rounded-xl border bg-background px-4 py-3"/></label>
-          <label className="text-sm font-medium">Message<textarea name="message" className="mt-2 min-h-40 w-full rounded-xl border bg-background px-4 py-3"/></label>
+          <label className="text-sm font-medium">Subject<input name="subject" defaultValue={testMode?"Mkety Mail delivery test":""} required={testMode} className="mt-2 w-full rounded-xl border bg-background px-4 py-3"/></label>
+          <label className="text-sm font-medium">Message<textarea name="message" defaultValue={testMode?"This is a test message sent from the Mkety Mail workspace. If you received it, outbound email delivery is working for this mailbox.":""} required={testMode} className="mt-2 min-h-40 w-full rounded-xl border bg-background px-4 py-3"/></label>
           <div className="flex flex-wrap gap-3">
-            <button name="mode" value="send" className="rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground">Send email</button>
+            <button name="mode" value="send" className="rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground">{testMode?"Send test email":"Send email"}</button>
             <button name="mode" value="draft" className="rounded-xl border px-5 py-3 font-semibold">Save draft</button>
           </div>
         </form></CardContent>
