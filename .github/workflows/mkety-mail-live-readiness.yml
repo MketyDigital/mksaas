@@ -1,6 +1,11 @@
 name: Mkety Mail Live Readiness
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/mkety-mail-live-readiness.yml'
   pull_request:
     paths:
       - '.github/workflows/mkety-mail-live-readiness.yml'
