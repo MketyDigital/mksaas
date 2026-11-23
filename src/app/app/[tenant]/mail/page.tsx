@@ -73,6 +73,14 @@ export default async function MailHome({ params }: { params: Promise<{ tenant: s
       <CardContent><a className="inline-flex rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground" href={`/app/${tenant}/mail/domains`}>Connect domain</a></CardContent>
     </Card>}
 
+    <Card className="rounded-2xl border-primary/20 bg-primary/5">
+      <CardHeader>
+        <CardTitle>Test email delivery</CardTitle>
+        <CardDescription>Send a message to an address you can check. It uses your mailbox and the same secure sending checks as a normal email.</CardDescription>
+      </CardHeader>
+      <CardContent><a className="inline-flex rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground" href={`/app/${tenant}/mail/inbox?test=1`}>Send a test email</a></CardContent>
+    </Card>
+
     {usage && <Card className="rounded-2xl">
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
