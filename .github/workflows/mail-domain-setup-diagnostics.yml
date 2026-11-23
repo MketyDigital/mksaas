@@ -1,6 +1,11 @@
 name: Mail domain setup diagnostics (read only)
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/mail-domain-setup-diagnostics.yml'
   workflow_dispatch:
 
 permissions:
@@ -108,6 +113,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          tail_started_at="$(date +%s)"
           timeout --signal=INT --kill-after=5s 150s npx --yes wrangler@4.129.0 tail mkety-app-host --format=json |
             node --input-type=module -e '
               import { createInterface } from "node:readline";
@@ -149,6 +155,23 @@ jobs:
               });
             ' || {
               status=$?
-              [ "$status" -eq 124 ] || [ "$status" -eq 130 ] || { echo 'Cloudflare Worker tail or safe log filter failed.'; exit "$status"; }
+              elapsed="$(( $(date +%s) - tail_started_at ))"
+              case "$status" in
+                124|130)
+                  echo "Diagnostic tail reached its bounded observation window (exit=$status, elapsed=${elapsed}s)."
+                  ;;
+                137)
+                  if [ "$elapsed" -ge 148 ] && [ "$elapsed" -le 180 ]; then
+                    echo "Diagnostic tail required a forced stop at the end of its bounded observation window (exit=$status, elapsed=${elapsed}s)."
+                  else
+                    echo 'Cloudflare Worker tail or safe log filter was unexpectedly killed.'
+                    exit "$status"
+                  fi
+                  ;;
+                *)
+                  echo 'Cloudflare Worker tail or safe log filter failed.'
+                  exit "$status"
+                  ;;
+              esac
             }
-          echo 'Diagnostic tail ended normally.'
+          echo 'Diagnostic tail ended; credential and Cloudflare permission checks completed independently.'
