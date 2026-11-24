@@ -45,7 +45,7 @@ export default async function MailInboxPage({params,searchParams}:{params:Promis
   return <div className="space-y-8">
     <PageHeader variant="hero" icon={<Inbox className="h-5 w-5"/>} title="Inbox" description="Send, receive and manage your business conversations in one simple place."/>
 
-    {(query.sent||query.saved)&&<div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm">{query.sent?'Message queued for secure delivery.':'Draft saved.'}</div>}
+    {(query.sent||query.saved)&&<div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm"><span>{query.sent?'Message queued for secure delivery.':'Draft saved.'}</span>{query.sent&&selected&&<a className="font-semibold text-primary" href={`/app/${tenant}/mail/inbox?mailbox=${selected.id}&folder=sent`}>Open Sent →</a>}</div>}
     {testMode&&<div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm">Send this to an address you can check. The message will use your selected mailbox and normal domain, suppression and sending-limit checks.</div>}
     {query.error&&<div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm">We couldn’t complete that action. Check the recipient, mailbox and domain status, then try again.</div>}
 
