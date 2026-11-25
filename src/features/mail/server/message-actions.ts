@@ -10,6 +10,7 @@ import { mailDomains, mailMailboxes, mailMailboxMembers, mailMessages, mailSuppr
 import { pushMailQueueBatch } from './cloudflare';
 import { fetchMailText } from './content';
 import { getMailSendCapacity } from './sending-policy';
+import { isMailSendingDomainReady } from './domain-sending-readiness';
 import { requireMailWorkspaceAccess } from './workspace';
 
 function validEmail(value:string){
@@ -73,7 +74,7 @@ export async function composeMail(tenantSlug:string,formData:FormData){
 
   if(!to||!subject||!text) redirect(`/app/${tenantSlug}/mail/inbox?mailbox=${mailboxId}&error=details`);
   if(await suppressed(auth.tenant.id,to)) redirect(`/app/${tenantSlug}/mail/inbox?mailbox=${mailboxId}&error=suppressed`);
-  if(!auth.domain.sendingEnabled) redirect(`/app/${tenantSlug}/mail/inbox?mailbox=${mailboxId}&error=domain`);
+  if(!isMailSendingDomainReady(auth.domain)) redirect(`/app/${tenantSlug}/mail/inbox?mailbox=${mailboxId}&error=domain`);
   const capacity=await getMailSendCapacity(auth.tenant.id,auth.domain.id,1);
   if(!capacity.allowed) redirect(`/app/${tenantSlug}/mail/inbox?mailbox=${mailboxId}&error=limit`);
 
@@ -120,7 +121,7 @@ export async function replyToMail(tenantSlug:string,formData:FormData){
   const original=await db.query.mailMessages.findFirst({where:eq(mailMessages.id,messageId)});
   if(!original||!text) return;
   const auth=await authorizeMailbox(tenantSlug,original.mailboxId);
-  if(!auth.mailbox||!auth.domain||original.tenantId!==auth.tenant.id||!auth.domain.sendingEnabled) return;
+  if(!auth.mailbox||!auth.domain||original.tenantId!==auth.tenant.id||!isMailSendingDomainReady(auth.domain)) return;
   const to=validEmail(original.fromAddress);
   if(!to||await suppressed(auth.tenant.id,to)) return;
   const capacity=await getMailSendCapacity(auth.tenant.id,auth.domain.id,1);
@@ -162,7 +163,7 @@ export async function forwardMail(tenantSlug:string,formData:FormData){
   const original=await db.query.mailMessages.findFirst({where:eq(mailMessages.id,messageId)});
   if(!original||!to) return;
   const auth=await authorizeMailbox(tenantSlug,original.mailboxId);
-  if(!auth.mailbox||!auth.domain||original.tenantId!==auth.tenant.id||!auth.domain.sendingEnabled) return;
+  if(!auth.mailbox||!auth.domain||original.tenantId!==auth.tenant.id||!isMailSendingDomainReady(auth.domain)) return;
   if(await suppressed(auth.tenant.id,to)) return;
   const capacity=await getMailSendCapacity(auth.tenant.id,auth.domain.id,1);
   if(!capacity.allowed) return;
