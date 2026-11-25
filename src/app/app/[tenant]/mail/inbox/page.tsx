@@ -32,6 +32,15 @@ export default async function MailInboxPage({params,searchParams}:{params:Promis
   const allowed=new Set(memberRows.map((row)=>row.mailboxId));
   const mailboxes=['admin','manager'].includes(String(access.membership.role))?allMailboxes:allMailboxes.filter((mailbox)=>allowed.has(mailbox.id));
   const selected=mailboxes.find((mailbox)=>mailbox.id===query.mailbox)||mailboxes[0]||null;
+  const selectedDomain=selected?domains.find((domain)=>domain.id===selected.domainId)||null:null;
+  const errorMessage=query.error?({
+    details:'Enter a valid recipient, subject and message before sending.',
+    mailbox:'That mailbox is unavailable or you no longer have access to it. Choose an active mailbox.',
+    suppressed:'This recipient is on your workspace suppression list, so Mail blocked the send.',
+    domain:'Sending is disabled for this mailbox’s domain. Check SPF, DKIM and DMARC on Business domains, then retry setup.',
+    limit:'Your current Mail sending allowance or domain warmup limit has been reached.',
+    queue:'The message could not be accepted by the Mail delivery queue. It was not sent; check Mail delivery diagnostics or contact support.',
+  } as Record<string,string>)[query.error]||'Mail could not complete this send. Open Business domains to review sender readiness, or check delivery diagnostics.' : '';
   const folder=folders.some(([key])=>key===query.folder)?String(query.folder):'inbox';
   const messages=selected?await db.query.mailMessages.findMany({
     where:folder==='starred'
@@ -46,8 +55,9 @@ export default async function MailInboxPage({params,searchParams}:{params:Promis
     <PageHeader variant="hero" icon={<Inbox className="h-5 w-5"/>} title="Inbox" description="Send, receive and manage your business conversations in one simple place."/>
 
     {(query.sent||query.saved)&&<div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm"><span>{query.sent?'Message queued for secure delivery.':'Draft saved.'}</span>{query.sent&&selected&&<a className="font-semibold text-primary" href={`/app/${tenant}/mail/inbox?mailbox=${selected.id}&folder=sent`}>Open Sent →</a>}</div>}
-    {testMode&&<div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm">Send this to an address you can check. The message will use your selected mailbox and normal domain, suppression and sending-limit checks.</div>}
-    {query.error&&<div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm">We couldn’t complete that action. Check the recipient, mailbox and domain status, then try again.</div>}
+    {testMode&&<div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm">Send this to an address you can check. This uses the selected mailbox and the normal send pipeline. Queue acceptance means the message was handed to delivery; it does not prove the recipient server accepted it.</div>}
+    {testMode&&selected&&<Card className="rounded-2xl"><CardHeader><CardTitle className="text-base">Sender readiness</CardTitle><CardDescription>{selectedDomain?`${selected.localPart}@${selectedDomain.domain}`:'No domain is connected to the selected mailbox.'} · sending {selectedDomain?.sendingEnabled?'enabled':'disabled'}</CardDescription></CardHeader><CardContent className="space-y-3 text-sm"><p>SPF: {selectedDomain?.spfStatus||'unknown'} · DKIM: {selectedDomain?.dkimStatus||'unknown'} · DMARC: {selectedDomain?.dmarcStatus||'unknown'}</p><p className="text-muted-foreground">All three records need to be verified for reliable recipient delivery. Pending DNS can cause rejection or spam placement even if Mail queues the message.</p><a className="font-semibold text-primary" href={`/app/${tenant}/mail/domains`}>Review Business domains →</a></CardContent></Card>}
+    {query.error&&<div role="alert" className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm"><p>{errorMessage}</p>{(query.error==='domain'||query.error==='queue'||!['details','mailbox','suppressed','limit'].includes(query.error))&&<a className="mt-2 inline-block font-semibold text-primary" href={`/app/${tenant}/mail/domains`}>{query.error==='queue'?'Review delivery setup →':'Open Business domains →'}</a>}</div>}
 
     {!selected?<Card className="rounded-2xl"><CardContent className="py-8"><p className="text-sm text-muted-foreground">Create your first mailbox to start sending and receiving email.</p><a className="mt-4 inline-flex rounded-xl bg-primary px-5 py-3 font-semibold text-primary-foreground" href={`/app/${tenant}/mail/mailboxes`}>Create mailbox</a></CardContent></Card>:
     <>
